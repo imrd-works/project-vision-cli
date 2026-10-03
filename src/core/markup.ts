@@ -9,6 +9,9 @@ import { validateZoneId } from './zone-id.js'
  * @see docs/beacon-format.md#маяки-в-коде
  */
 
+/** Bump when parsing rules change: cached markup of every file is then re-parsed. */
+export const MARKUP_VERSION = 1
+
 export interface CodeBeacon {
   id: string
   /** 1-based line of the marker. */

@@ -192,7 +192,7 @@ describe('beacon CLI', () => {
       expect(result.out).toContain('○ billing')
       expect(result.out).toContain('Папки без зон:\n  src/core')
       // The index cache lives in the git directory, out of formatters' and linters' way.
-      expect(existsSync(path.join(repo.root, '.git/beacon/index.json'))).toBe(true)
+      expect(existsSync(path.join(repo.root, '.git/beacon/index.db'))).toBe(true)
       expect(repo.git('status', '--porcelain')).toBe('')
     })
 
