@@ -112,3 +112,14 @@ export function configValue(root: string, key: string): string | undefined {
   const value = tryGit(root, ['config', '--get', key])?.trim()
   return value === '' ? undefined : value
 }
+
+/** The repository's name: from the origin remote (`…/project-vision-backend.git`), else its folder. */
+export function projectName(root: string): string {
+  const remote = configValue(root, 'remote.origin.url')
+  const name = remote
+    ?.replace(/\/+$/, '')
+    .split(/[/:]/)
+    .at(-1)
+    ?.replace(/\.git$/, '')
+  return name === undefined || name === '' ? path.basename(root) : name
+}

@@ -111,10 +111,12 @@ describe('local client', () => {
     })
 
     it('serves the index to allowed origins only', async () => {
+      repo.git('remote', 'add', 'origin', 'git@github.com:acme/shop-backend.git')
       const index = await request(`${server.url}/api/index`, { Origin: ORIGIN })
       expect(index.status).toBe(200)
       expect(index.headers['access-control-allow-origin']).toBe(ORIGIN)
       expect(JSON.parse(index.body)).toMatchObject({
+        project: { name: 'shop-backend' },
         manifest: 'ok',
         version: 0,
         index: { zones: expect.arrayContaining([expect.objectContaining({ id: 'home.pricing' })]) },
