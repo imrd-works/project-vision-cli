@@ -99,6 +99,7 @@ describe('beacon CLI', () => {
       expect(first.code).toBe(0)
       expect(repo.read('.beacons/zones.yml')).toContain('src/modules/auth/**')
       expect(readdirSync(path.join(repo.root, '.beacons'))).toEqual(['zones.yml'])
+      expect(repo.read('AGENTS.md')).toContain('beacon which <файл>')
       expect(repo.read('.git/hooks/commit-msg')).toContain('hook commit-msg')
 
       const again = repo.run(['init', '--json'])
@@ -108,13 +109,16 @@ describe('beacon CLI', () => {
           installed: [],
           alreadyInstalled: ['prepare-commit-msg', 'commit-msg', 'pre-push'],
         },
+        agents: 'present',
       })
     })
 
     it('appends to husky hooks and leaves foreign git hooks alone', () => {
       repo.write('.husky/pre-push', 'npm run verify\n')
+      repo.write('AGENTS.md', '# Rules\n\nBe nice.\n')
       repo.run(['init'])
       expect(repo.read('.husky/pre-push')).toMatch(/^npm run verify\n.*hook pre-push/s)
+      expect(repo.read('AGENTS.md')).toMatch(/^# Rules\n\nBe nice\.\n\n<!-- beacon:agents -->/)
 
       const plain = TestRepo.create()
       try {
