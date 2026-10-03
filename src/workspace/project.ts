@@ -13,6 +13,7 @@ import { createZoneResolver, type ZoneResolver } from '../core/zone-resolver.js'
 import {
   commitDiff,
   completionMessages,
+  gitPath,
   isBinary,
   listFiles,
   readRevision,
@@ -32,7 +33,8 @@ export type ProjectLoad =
 export type ManifestSource =
   { from: 'worktree' } | { from: 'index' } | { from: 'commit'; sha: string }
 
-export const INDEX_CACHE_PATH = '.beacons/.cache/index.json'
+/** Inside the git directory: never committed and never seen by formatters or linters. */
+const INDEX_CACHE_GIT_PATH = 'beacon/index.json'
 
 /** Files above this size are not scanned for beacons (generated bundles, dumps). */
 const MAX_SCAN_BYTES = 1024 * 1024
@@ -64,7 +66,7 @@ function manifestText(root: string, source: ManifestSource): string | undefined 
   }
 }
 
-/** Reads every non-ignored file, builds the index and caches it in `.beacons/.cache`. */
+/** Reads every non-ignored file, builds the index and caches it in `.git/beacon/index.json`. */
 export function scanProject(project: Project): ProjectIndex {
   const scanned = listFiles(project.root).flatMap((file): ScannedFile[] => {
     const absolute = path.join(project.root, file)
@@ -130,18 +132,9 @@ function readText(file: string): string | undefined {
   }
 }
 
-/** Keeps the index cache out of git: `.beacons/.gitignore` with `.cache/`. */
-export function ensureCacheIgnored(root: string): void {
-  const file = path.join(root, '.beacons/.gitignore')
-  if (existsSync(file)) return
-  mkdirSync(path.dirname(file), { recursive: true })
-  writeFileSync(file, '.cache/\n')
-}
-
 function writeCache(root: string, index: ProjectIndex): void {
-  const file = path.join(root, INDEX_CACHE_PATH)
   try {
-    ensureCacheIgnored(root)
+    const file = gitPath(root, INDEX_CACHE_GIT_PATH)
     mkdirSync(path.dirname(file), { recursive: true })
     writeFileSync(file, `${JSON.stringify(index, null, 2)}\n`)
   } catch {
