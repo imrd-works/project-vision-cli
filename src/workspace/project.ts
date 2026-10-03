@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 import type { ChangedFile } from '../core/commit-check.js'
@@ -13,12 +13,12 @@ import { createZoneResolver, type ZoneResolver } from '../core/zone-resolver.js'
 import {
   commitDiff,
   completionMessages,
-  gitPath,
   isBinary,
   listFiles,
   readRevision,
   stagedDiff,
 } from './git.js'
+import { type CachedFile, IndexStore } from './index-store.js'
 
 export interface Project {
   root: string
@@ -32,9 +32,6 @@ export type ProjectLoad =
 /** Where to read the zone map from: the working tree, the git index, or a commit. */
 export type ManifestSource =
   { from: 'worktree' } | { from: 'index' } | { from: 'commit'; sha: string }
-
-/** Inside the git directory: never committed and never seen by formatters or linters. */
-const INDEX_CACHE_GIT_PATH = 'beacon/index.json'
 
 /** Files above this size are not scanned for beacons (generated bundles, dumps). */
 const MAX_SCAN_BYTES = 1024 * 1024
@@ -66,22 +63,56 @@ function manifestText(root: string, source: ManifestSource): string | undefined 
   }
 }
 
-/** Reads every non-ignored file, builds the index and caches it in `.git/beacon/index.json`. */
+/**
+ * Indexes every file git can see. Markup is re-parsed only for files whose size or modification
+ * time changed since the last scan (cached in `.git/beacon/index.db`).
+ */
 export function scanProject(project: Project): ProjectIndex {
-  const scanned = listFiles(project.root).flatMap((file): ScannedFile[] => {
-    const absolute = path.join(project.root, file)
-    if (!existsSync(absolute)) return [] // deleted in the working tree, not committed yet
-    const pathZone = project.resolver(file)
-    const text = readText(absolute)
-    return [
-      text === undefined
-        ? { path: file, pathZone }
-        : { path: file, pathZone, markup: parseMarkup(text, file) },
-    ]
-  })
-  const index = buildIndex(project.manifest, scanned, completedZones(project))
-  writeCache(project.root, index)
-  return index
+  const store = IndexStore.open(project.root)
+  try {
+    const cached = store.all()
+    const current = new Map<string, CachedFile>()
+    let dirty = false
+    for (const file of listFiles(project.root)) {
+      const previous = cached.get(file)
+      const entry = cachedOrRead(project.root, file, previous)
+      if (!entry) continue // deleted in the working tree, or not a regular file
+      if (entry !== previous) dirty = true
+      current.set(file, entry)
+    }
+    if (dirty || current.size !== cached.size) store.sync(current, Date.now())
+
+    const scanned = [...current].map(([file, entry]): ScannedFile => ({
+      path: file,
+      pathZone: project.resolver(file),
+      ...(entry.markup === null ? {} : { markup: entry.markup }),
+    }))
+    return buildIndex(project.manifest, scanned, completedZones(project))
+  } finally {
+    store.close()
+  }
+}
+
+function cachedOrRead(
+  root: string,
+  file: string,
+  cached: CachedFile | undefined
+): CachedFile | undefined {
+  const absolute = path.join(root, file)
+  let stat
+  try {
+    stat = statSync(absolute)
+  } catch {
+    return undefined
+  }
+  if (!stat.isFile()) return undefined // submodules, sockets
+  if (cached?.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached
+  const text = stat.size > MAX_SCAN_BYTES ? undefined : readText(absolute)
+  return {
+    size: stat.size,
+    mtimeMs: stat.mtimeMs,
+    markup: text === undefined ? null : parseMarkup(text, file),
+  }
 }
 
 /** Staged changes with both versions of each file. */
@@ -124,20 +155,9 @@ function completedZones(project: Project): Set<string> {
 
 function readText(file: string): string | undefined {
   try {
-    if (statSync(file).size > MAX_SCAN_BYTES) return undefined
     const content = readFileSync(file)
     return isBinary(content) ? undefined : content.toString('utf8')
   } catch {
     return undefined // unreadable (permissions, a socket): nothing to scan
-  }
-}
-
-function writeCache(root: string, index: ProjectIndex): void {
-  try {
-    const file = gitPath(root, INDEX_CACHE_GIT_PATH)
-    mkdirSync(path.dirname(file), { recursive: true })
-    writeFileSync(file, `${JSON.stringify(index, null, 2)}\n`)
-  } catch {
-    // The cache is an optimization for other tools; failing to write it is not an error.
   }
 }
