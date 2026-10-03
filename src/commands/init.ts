@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { draftZones, renderDraft } from '../core/init-draft.js'
 import { MANIFEST_PATH } from '../core/manifest.js'
+import { ensureAgentsGuide } from '../workspace/agents-guide.js'
 import { listFiles } from '../workspace/git.js'
 import { installHooks } from '../workspace/hooks.js'
 
@@ -40,7 +41,13 @@ export function init(root: string): CommandResult {
       `    ${manual.line}`
     )
   }
-  lines.push('Дальше: beacon status — покрытие и папки без зон; beacon check — проверка разметки')
+  const agents = ensureAgentsGuide(root)
+  lines.push(
+    agents === 'present'
+      ? '• AGENTS.md: правила для ИИ-агентов уже есть'
+      : `✓ AGENTS.md: правила для ИИ-агентов ${agents === 'created' ? 'созданы' : 'добавлены'}`,
+    'Дальше: beacon status — покрытие и папки без зон; beacon check — проверка разметки'
+  )
 
-  return result(EXIT.ok, lines, { manifest: MANIFEST_PATH, draftedZones, hooks })
+  return result(EXIT.ok, lines, { manifest: MANIFEST_PATH, draftedZones, hooks, agents })
 }
