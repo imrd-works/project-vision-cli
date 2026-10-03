@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -93,12 +93,12 @@ describe('beacon CLI', () => {
   })
 
   describe('beacon init', () => {
-    it('drafts zones from folders, ignores the cache and installs git hooks', () => {
+    it('drafts zones from folders and installs git hooks', () => {
       repo.write('src/modules/auth/auth.service.ts', 'export {}\n')
       const first = repo.run(['init'])
       expect(first.code).toBe(0)
       expect(repo.read('.beacons/zones.yml')).toContain('src/modules/auth/**')
-      expect(repo.read('.beacons/.gitignore')).toBe('.cache/\n')
+      expect(readdirSync(path.join(repo.root, '.beacons'))).toEqual(['zones.yml'])
       expect(repo.read('.git/hooks/commit-msg')).toContain('hook commit-msg')
 
       const again = repo.run(['init', '--json'])
@@ -191,7 +191,9 @@ describe('beacon CLI', () => {
       expect(result.out).toContain('✓ home')
       expect(result.out).toContain('○ billing')
       expect(result.out).toContain('Папки без зон:\n  src/core')
-      expect(existsSync(path.join(repo.root, '.beacons/.cache/index.json'))).toBe(true)
+      // The index cache lives in the git directory, out of formatters' and linters' way.
+      expect(existsSync(path.join(repo.root, '.git/beacon/index.json'))).toBe(true)
+      expect(repo.git('status', '--porcelain')).toBe('')
     })
 
     it('mark adds a file beacon in the right comment syntax', () => {

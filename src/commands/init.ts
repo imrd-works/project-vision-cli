@@ -5,7 +5,6 @@ import { draftZones, renderDraft } from '../core/init-draft.js'
 import { MANIFEST_PATH } from '../core/manifest.js'
 import { listFiles } from '../workspace/git.js'
 import { installHooks } from '../workspace/hooks.js'
-import { ensureCacheIgnored } from '../workspace/project.js'
 
 import { type CommandResult, EXIT, result } from './result.js'
 
@@ -28,7 +27,6 @@ export function init(root: string): CommandResult {
         : `✓ ${MANIFEST_PATH}: пустая карта с примером — добавьте зоны`
     )
   }
-  ensureCacheIgnored(root)
 
   const hooks = installHooks(root)
   const where = hooks.mode === 'husky' ? '.husky' : 'git hooks'
