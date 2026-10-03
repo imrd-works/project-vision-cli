@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import path from 'node:path'
 
+import { projectName } from '../workspace/git.js'
 import { LiveIndex, type Snapshot } from '../workspace/live-index.js'
 
 import { auditMarkdown } from './audit.js'
@@ -96,7 +96,7 @@ export async function serveCommand(
   }
   const server = await startServer(root, options)
   context.out(
-    `beacon serve: ${server.url} — ${path.basename(root)}, ${describe(server.snapshot())}\n` +
+    `beacon serve: ${server.url} — ${projectName(root)}, ${describe(server.snapshot())}\n` +
       `Разрешённые origin: ${options.origins.join(', ')}. Остановить — Ctrl+C`
   )
   await untilAborted(context.signal)
@@ -115,7 +115,7 @@ const ROUTES: Record<string, Route> = {
     })
   },
   '/api/index': (_url, response, { root, live }) => {
-    sendJson(response, 200, { project: { name: path.basename(root), root }, ...live.current() })
+    sendJson(response, 200, { project: { name: projectName(root), root }, ...live.current() })
   },
   '/api/events': (_url, response, context) => {
     openEventStream(response, context)

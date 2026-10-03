@@ -1,5 +1,4 @@
-import path from 'node:path'
-
+import { projectName } from '../workspace/git.js'
 import { LiveIndex, type Snapshot } from '../workspace/live-index.js'
 
 import { EXIT, plural, requireProject } from './result.js'
@@ -13,7 +12,7 @@ export async function watchCommand(root: string, context: RunContext): Promise<n
     return loaded.failure.code
   }
   const live = new LiveIndex(root).start()
-  context.out(`Слежу за ${path.basename(root)}: ${describe(live.current())}. Остановить — Ctrl+C`)
+  context.out(`Слежу за ${projectName(root)}: ${describe(live.current())}. Остановить — Ctrl+C`)
   live.subscribe((snapshot) => {
     context.out(`↻ ${new Date().toLocaleTimeString('ru-RU')} ${describe(snapshot)}`)
   })
