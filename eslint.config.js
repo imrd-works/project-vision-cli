@@ -94,6 +94,8 @@ export default defineConfig([
       'import-x/no-duplicates': ['error', { 'prefer-inline': true }],
       'import-x/no-default-export': 'error',
       'import-x/no-named-as-default-member': 'off',
+      // The resolver does not follow this package's "exports" patterns; TypeScript checks them.
+      'import-x/no-unresolved': ['error', { ignore: ['^@modelcontextprotocol/sdk/'] }],
       'import-x/first': 'error',
       'import-x/newline-after-import': 'error',
       'import-x/order': [

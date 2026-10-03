@@ -1,14 +1,18 @@
-import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { parseArgs, styleText } from 'node:util'
 
+import { audit } from '../commands/audit.js'
 import { check } from '../commands/check.js'
 import { hook } from '../commands/hook.js'
 import { init } from '../commands/init.js'
 import { list } from '../commands/list.js'
 import { mark } from '../commands/mark.js'
+import { mcpCommand } from '../commands/mcp.js'
 import { type CommandResult, EXIT, result } from '../commands/result.js'
+import { packageVersion, type RunContext } from '../commands/running.js'
+import { DEFAULT_ORIGINS, DEFAULT_PORT, serveCommand } from '../commands/serve.js'
 import { status } from '../commands/status.js'
+import { watchCommand } from '../commands/watch.js'
 import { which } from '../commands/which.js'
 import { findRepoRoot } from '../workspace/git.js'
 import { HOOK_NAMES, type HookName } from '../workspace/hooks.js'
@@ -19,6 +23,8 @@ export interface Io {
   err: (text: string) => void
   readStdin: () => string
   color: boolean
+  /** Stops long-running commands (watch, serve, mcp). */
+  signal?: AbortSignal
 }
 
 const HELP = `beacon — зоны и маяки Project Vision
@@ -33,9 +39,16 @@ const HELP = `beacon — зоны и маяки Project Vision
   which <файл>                  зоны файла и регионов в нём
   status                        покрытие кода зонами, состояния зон, папки без зон
   mark <файл> <зона>            поставить маяк зоны на файл
+  audit [--tag <тег>] [--zone <id>] [--tests] [--no-code]
+                                пакет контекста для аудита нейросетью (Markdown)
+  watch                         держать индекс актуальным при изменении файлов
+  serve [--port 4317] [--host 127.0.0.1] [--origin <url>]
+                                локальный API для дашборда с живыми обновлениями
+  mcp                           MCP-сервер для ИИ-агентов (stdio)
   hook <имя> [аргументы git]    точка входа git-хуков (их подключает beacon init)
 
 Опции:
+  -C <папка>     работать с репозиторием в этой папке
   --json         вывод в JSON — для плагинов и скриптов
   -h, --help     справка
   -v, --version  версия
@@ -49,41 +62,109 @@ const OPTIONS = {
   tag: { type: 'string' },
   zone: { type: 'string' },
   with: { type: 'string', multiple: true },
+  dir: { type: 'string', short: 'C' },
+  tests: { type: 'boolean' },
+  code: { type: 'boolean', default: true },
+  port: { type: 'string' },
+  host: { type: 'string' },
+  origin: { type: 'string', multiple: true },
 } as const
 
-export function runCli(argv: readonly string[], io: Io): number {
-  let parsed
+const PARSE_CONFIG = {
+  options: OPTIONS,
+  allowPositionals: true,
+  allowNegative: true,
+  strict: true,
+} as const
+type Parsed = ReturnType<typeof parseArgs<typeof PARSE_CONFIG>>
+
+function parse(argv: readonly string[], io: Io): Parsed | undefined {
   try {
-    parsed = parseArgs({ args: [...argv], options: OPTIONS, allowPositionals: true, strict: true })
+    return parseArgs({ ...PARSE_CONFIG, args: [...argv] })
   } catch (error_) {
     io.err(`${error_ instanceof Error ? error_.message : String(error_)}\n\n${HELP}`)
-    return EXIT.usage
+    return undefined
   }
-  const { values, positionals } = parsed
+}
+
+/** `--version`, `--help` and a bare `beacon`: answered without a repository. */
+function answerWithoutRepo(
+  command: string | undefined,
+  values: { help?: boolean; version?: boolean },
+  io: Io
+): number | undefined {
   if (values.version) {
-    io.out(version())
+    io.out(packageVersion())
     return EXIT.ok
   }
-  const [command, ...rest] = positionals
   if (values.help || command === undefined || command === 'help') {
     io.out(HELP)
     return command === undefined && !values.help ? EXIT.usage : EXIT.ok
   }
+  return undefined
+}
 
-  const root = findRepoRoot(io.cwd)
+export function runCli(argv: readonly string[], io: Io): number | Promise<number> {
+  const parsed = parse(argv, io)
+  if (!parsed) return EXIT.usage
+  const { values, positionals } = parsed
+  const [command, ...rest] = positionals
+  const early = answerWithoutRepo(command, values, io)
+  if (early !== undefined || command === undefined) return early ?? EXIT.usage
+
+  const root = findRepoRoot(values.dir === undefined ? io.cwd : path.resolve(io.cwd, values.dir))
   if (root === undefined) {
     io.err('✖ beacon работает внутри git-репозитория')
     return EXIT.failed
   }
-  const outcome = dispatch(command, rest, { root, io, values })
+  const context: Context = { root, io, values }
+  if (Object.hasOwn(LONG_RUNNING, command)) return LONG_RUNNING[command]?.(context) ?? EXIT.usage
+  const outcome = dispatch(command, rest, context)
   print(outcome, io, values.json === true)
   return outcome.code
+}
+
+interface Values {
+  tag?: string
+  zone?: string
+  with?: string[]
+  tests?: boolean
+  code?: boolean
+  port?: string
+  host?: string
+  origin?: string[]
 }
 
 interface Context {
   root: string
   io: Io
-  values: { tag?: string; zone?: string; with?: string[] }
+  values: Values
+}
+
+function runContext({ io }: Context): RunContext {
+  return { out: io.out, err: io.err, signal: io.signal ?? new AbortController().signal }
+}
+
+const LONG_RUNNING: Record<string, (context: Context) => Promise<number>> = {
+  watch: (context) => watchCommand(context.root, runContext(context)),
+  mcp: (context) => mcpCommand(context.root, runContext(context)),
+  serve: async (context) => {
+    const port = Number(context.values.port ?? DEFAULT_PORT)
+    if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+      print(
+        usage(`--port: ожидается номер порта, получено "${context.values.port ?? ''}"`),
+        context.io,
+        false
+      )
+      return EXIT.usage
+    }
+    const options = {
+      port,
+      host: context.values.host ?? '127.0.0.1',
+      origins: context.values.origin ?? DEFAULT_ORIGINS,
+    }
+    return serveCommand(context.root, options, runContext(context))
+  },
 }
 
 type Handler = (args: string[], context: Context) => CommandResult
@@ -104,6 +185,13 @@ const COMMANDS: Record<string, Handler> = {
       ? usage('укажите файл: beacon which <файл>')
       : which(context.root, fromCwd(context, file)),
   status: (_, { root }) => status(root),
+  audit: (_, { root, values }) =>
+    audit(root, {
+      tag: values.tag,
+      zone: values.zone,
+      includeTests: values.tests === true,
+      code: values.code !== false,
+    }),
   mark: ([file, zone], context) =>
     file === undefined || zone === undefined
       ? usage('beacon mark <файл> <зона>')
@@ -154,10 +242,4 @@ function colorize(text: string): string {
       return color === undefined ? line : styleText(color, line, { validateStream: false })
     })
     .join('\n')
-}
-
-function version(): string {
-  const file = new URL('../../package.json', import.meta.url)
-  const pkg = JSON.parse(readFileSync(file, 'utf8')) as { version: string }
-  return pkg.version
 }
