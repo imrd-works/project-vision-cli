@@ -1,0 +1,2 @@
+node scripts/check-branch-name.mjs
+npm run verify
