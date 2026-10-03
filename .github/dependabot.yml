@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore
+      include: scope
+    ignore:
+      # typescript-eslint supports TypeScript < 6.1 only. Remove once it supports TS 7.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
+      # Types follow the oldest supported runtime (engines.node), updated by hand.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
+    groups:
+      lint:
+        patterns: ['eslint*', '@eslint*', 'typescript-eslint', 'prettier']
+      test:
+        patterns: ['vitest', '@vitest/*']
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+      include: scope
