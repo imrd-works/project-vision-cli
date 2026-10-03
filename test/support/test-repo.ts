@@ -51,22 +51,45 @@ export class TestRepo {
     return this.git('rev-parse', 'HEAD').trim()
   }
 
-  /** Runs the CLI in-process, like `beacon <argv>` started in `cwd` (the root by default). */
+  /** Runs a short CLI command in-process, like `beacon <argv>` started in `cwd` (the root by default). */
   run(argv: string[], options: { cwd?: string; stdin?: string } = {}): Run {
-    let out = ''
-    let err = ''
+    const capture = this.capture(argv, options)
+    if (typeof capture.code !== 'number') throw new TypeError('long-running command: use start()')
+    return { code: capture.code, out: capture.output.out, err: capture.output.err }
+  }
+
+  /** Starts a long-running command (watch, serve); `stop()` aborts it and returns its output. */
+  start(argv: string[]): { output: { out: string; err: string }; stop: () => Promise<Run> } {
+    const controller = new AbortController()
+    const capture = this.capture(argv, { signal: controller.signal })
+    return {
+      output: capture.output,
+      stop: async () => {
+        controller.abort()
+        const code = await capture.code
+        return { code, ...capture.output }
+      },
+    }
+  }
+
+  private capture(
+    argv: string[],
+    options: { cwd?: string; stdin?: string; signal?: AbortSignal }
+  ): { code: number | Promise<number>; output: { out: string; err: string } } {
+    const output = { out: '', err: '' }
     const code = runCli(argv, {
       cwd: options.cwd ?? this.root,
       out: (text) => {
-        out += `${text}\n`
+        output.out += `${text}\n`
       },
       err: (text) => {
-        err += `${text}\n`
+        output.err += `${text}\n`
       },
       readStdin: () => options.stdin ?? '',
       color: false,
+      ...(options.signal ? { signal: options.signal } : {}),
     })
-    return { code, out, err }
+    return { code, output }
   }
 
   /** Makes `node_modules/.bin/beacon` run the CLI built into `dist`, as an installed package would. */
