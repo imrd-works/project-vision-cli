@@ -1,0 +1,75 @@
+{
+  "name": "project-vision-cli",
+  "description": "Beacon CLI: zones, code beacons and the commit linter (Project Vision open core)",
+  "author": "Daniel Rassomakhin",
+  "license": "UNLICENSED",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "beacon": "dist/cli/main.js"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/*.map"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/imrd-works/project-vision-cli.git"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "beacon": "node dist/cli/main.js",
+    "verify": "npm run format:check && npm run lint:check && npm run typecheck && npm run test:coverage && npm run knip",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --fix --cache --max-warnings 0",
+    "lint:check": "eslint . --cache --max-warnings 0 && secretlint \"**/*\"",
+    "format": "prettier --write --cache .",
+    "format:check": "prettier --check --cache .",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "knip": "knip",
+    "prepare": "husky && npm run build",
+    "patch": "npm version patch -m \"chore(release): v%s\"",
+    "minor": "npm version minor -m \"chore(release): v%s\"",
+    "major": "npm version major -m \"chore(release): v%s\""
+  },
+  "dependencies": {
+    "picomatch": "4.0.7",
+    "yaml": "2.9.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "21.2.3",
+    "@commitlint/config-conventional": "21.2.3",
+    "@commitlint/types": "21.2.3",
+    "@eslint-community/eslint-plugin-eslint-comments": "4.8.1",
+    "@eslint/js": "10.0.1",
+    "@secretlint/secretlint-rule-preset-recommend": "13.0.6",
+    "@types/node": "22.20.5",
+    "@types/picomatch": "4.0.3",
+    "@vitest/coverage-v8": "5.0.3",
+    "@vitest/eslint-plugin": "1.6.27",
+    "eslint": "10.12.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-boundaries": "7.2.0",
+    "eslint-plugin-check-file": "3.3.2",
+    "eslint-plugin-import-x": "4.17.1",
+    "eslint-plugin-unicorn": "76.0.0",
+    "globals": "17.13.0",
+    "husky": "9.1.7",
+    "knip": "6.39.0",
+    "lint-staged": "17.6.0",
+    "prettier": "3.9.9",
+    "secretlint": "13.0.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0",
+    "vitest": "5.0.3"
+  }
+}
