@@ -40,6 +40,7 @@
     "major": "npm version major -m \"chore(release): v%s\""
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.0",
     "picomatch": "4.0.7",
     "yaml": "2.9.1",
     "zod": "4.6.5"
