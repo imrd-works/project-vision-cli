@@ -10,6 +10,8 @@ import { list } from './list.js'
 import { type CommandResult, EXIT, requireProject } from './result.js'
 import { packageVersion, type RunContext, untilAborted } from './running.js'
 import { status } from './status.js'
+import { tree } from './tree.js'
+import { validate } from './validate.js'
 import { which } from './which.js'
 
 /**
@@ -81,6 +83,28 @@ export function createMcpServer(root: string): McpServer {
       description: 'Coverage of the code by zones, zone states and folders without zones',
     },
     () => json(status(root))
+  )
+  server.registerTool(
+    'architecture_tree',
+    {
+      title: 'Architecture tree',
+      description:
+        'Folders of the project with file counts and zones — check structure against it instead of listing the disk',
+      inputSchema: { depth: z.number().int().min(1).optional().describe('Folder levels to show') },
+    },
+    ({ depth }) => {
+      const outcome = tree(root, { depth })
+      return { content: [{ type: 'text', text: outcome.text }], isError: outcome.code !== EXIT.ok }
+    }
+  )
+  server.registerTool(
+    'validate_architecture',
+    {
+      title: 'Validate architecture',
+      description:
+        "Runs the project's architecture checks (ESLint boundaries, steiger, dependency-cruiser) and returns violations with their zones",
+    },
+    async () => json(await validate(root))
   )
   return server
 }

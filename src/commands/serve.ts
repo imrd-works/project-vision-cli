@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net'
 
 import { projectName } from '../workspace/git.js'
 import { LiveIndex, type Snapshot } from '../workspace/live-index.js'
+import { LiveValidation } from '../workspace/live-validation.js'
 
 import { auditMarkdown } from './audit.js'
 import { EXIT, requireProject } from './result.js'
@@ -18,6 +19,8 @@ import { which } from './which.js'
  *   GET /api/events          Server-Sent Events: `index` with the new version on every change
  *   GET /api/which?file=…    zones of one file
  *   GET /api/audit?tag=…     audit context pack (Markdown), see `beacon audit`
+ *   GET /api/history         commits by zones and development dynamics
+ *   GET /api/validation      architecture checks; SSE `validation` when a run finishes
  *
  * The API serves source code, so it answers only to local hosts (no DNS rebinding) and to the
  * allowed browser origins (no reading by arbitrary websites).
@@ -44,16 +47,24 @@ const HEARTBEAT_MS = 25_000
 interface Context {
   root: string
   live: LiveIndex
+  validation: LiveValidation
   options: ServeOptions
   clients: Set<ServerResponse>
 }
 
 export async function startServer(root: string, options: ServeOptions): Promise<RunningServer> {
   const live = new LiveIndex(root).start()
-  const context: Context = { root, live, options, clients: new Set() }
+  const validation = new LiveValidation(root, () => live.current().index)
+  const context: Context = { root, live, validation, options, clients: new Set() }
   const unsubscribe = live.subscribe((snapshot) => {
-    for (const client of context.clients) sendEvent(client, snapshot.version)
+    for (const client of context.clients) sendEvent(client, 'index', { version: snapshot.version })
+    validation.schedule()
   })
+  validation.subscribe((snapshot) => {
+    const data = { version: snapshot.version, running: snapshot.running }
+    for (const client of context.clients) sendEvent(client, 'validation', data)
+  })
+  validation.schedule(0)
   const server = createServer((request, response) => {
     handle(request, response, context)
   })
@@ -73,6 +84,7 @@ export async function startServer(root: string, options: ServeOptions): Promise<
     close: async () => {
       clearInterval(heartbeat)
       unsubscribe()
+      validation.stop()
       live.stop()
       for (const client of context.clients) client.end()
       await new Promise<void>((resolve) =>
@@ -111,11 +123,25 @@ const ROUTES: Record<string, Route> = {
     sendJson(response, 200, {
       name: 'beacon',
       version: packageVersion(),
-      endpoints: ['/api/index', '/api/events', '/api/which?file=', '/api/audit?tag=&zone='],
+      endpoints: [
+        '/api/index',
+        '/api/events',
+        '/api/which?file=',
+        '/api/audit?tag=&zone=',
+        '/api/history',
+        '/api/validation',
+      ],
     })
   },
   '/api/index': (_url, response, { root, live }) => {
     sendJson(response, 200, { project: { name: projectName(root), root }, ...live.current() })
+  },
+  '/api/history': (_url, response, { live }) => {
+    const { version, history } = live.current()
+    sendJson(response, history ? 200 : 409, { version, history })
+  },
+  '/api/validation': (_url, response, { validation }) => {
+    sendJson(response, 200, validation.current())
   },
   '/api/events': (_url, response, context) => {
     openEventStream(response, context)
@@ -188,13 +214,15 @@ function openEventStream(response: ServerResponse, context: Context): void {
     Connection: 'keep-alive',
   })
   response.write('retry: 2000\n\n')
-  sendEvent(response, context.live.current().version)
+  sendEvent(response, 'index', { version: context.live.current().version })
+  const { version, running } = context.validation.current()
+  sendEvent(response, 'validation', { version, running })
   context.clients.add(response)
   response.on('close', () => context.clients.delete(response))
 }
 
-function sendEvent(response: ServerResponse, version: number): void {
-  response.write(`event: index\ndata: ${JSON.stringify({ version })}\n\n`)
+function sendEvent(response: ServerResponse, event: 'index' | 'validation', data: unknown): void {
+  response.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {

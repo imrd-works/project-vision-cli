@@ -3,6 +3,7 @@ import { parseArgs, styleText } from 'node:util'
 
 import { audit } from '../commands/audit.js'
 import { check } from '../commands/check.js'
+import { history } from '../commands/history.js'
 import { hook } from '../commands/hook.js'
 import { init } from '../commands/init.js'
 import { list } from '../commands/list.js'
@@ -12,6 +13,8 @@ import { type CommandResult, EXIT, result } from '../commands/result.js'
 import { packageVersion, type RunContext } from '../commands/running.js'
 import { DEFAULT_ORIGINS, DEFAULT_PORT, serveCommand } from '../commands/serve.js'
 import { status } from '../commands/status.js'
+import { tree } from '../commands/tree.js'
+import { validate } from '../commands/validate.js'
 import { watchCommand } from '../commands/watch.js'
 import { which } from '../commands/which.js'
 import { findRepoRoot } from '../workspace/git.js'
@@ -41,6 +44,9 @@ const HELP = `beacon — зоны и маяки Project Vision
   mark <файл> <зона>            поставить маяк зоны на файл
   audit [--tag <тег>] [--zone <id>] [--tests] [--no-code]
                                 пакет контекста для аудита нейросетью (Markdown)
+  tree [--depth <n>]            дерево архитектуры: папки, число файлов, зоны
+  history                       коммиты по зонам, их авторы и провалы в разработке
+  validate                      проверить архитектуру инструментами проекта (.beacons/config.yml)
   watch                         держать индекс актуальным при изменении файлов
   serve [--port 4317] [--host 127.0.0.1] [--origin <url>]
                                 локальный API для дашборда с живыми обновлениями
@@ -68,6 +74,7 @@ const OPTIONS = {
   port: { type: 'string' },
   host: { type: 'string' },
   origin: { type: 'string', multiple: true },
+  depth: { type: 'string' },
 } as const
 
 const PARSE_CONFIG = {
@@ -133,6 +140,8 @@ interface Values {
   port?: string
   host?: string
   origin?: string[]
+  depth?: string
+  json?: boolean
 }
 
 interface Context {
@@ -148,6 +157,11 @@ function runContext({ io }: Context): RunContext {
 const LONG_RUNNING: Record<string, (context: Context) => Promise<number>> = {
   watch: (context) => watchCommand(context.root, runContext(context)),
   mcp: (context) => mcpCommand(context.root, runContext(context)),
+  validate: async ({ root, io, values }) => {
+    const outcome = await validate(root)
+    print(outcome, io, values.json === true)
+    return outcome.code
+  },
   serve: async (context) => {
     const port = Number(context.values.port ?? DEFAULT_PORT)
     if (!Number.isInteger(port) || port < 0 || port > 65_535) {
@@ -185,6 +199,14 @@ const COMMANDS: Record<string, Handler> = {
       ? usage('укажите файл: beacon which <файл>')
       : which(context.root, fromCwd(context, file)),
   status: (_, { root }) => status(root),
+  history: (_, { root }) => history(root),
+  tree: (_, { root, values }) => {
+    const depth = values.depth === undefined ? undefined : Number(values.depth)
+    if (depth !== undefined && (!Number.isInteger(depth) || depth < 1)) {
+      return usage(`--depth: ожидается целое число от 1, получено "${values.depth ?? ''}"`)
+    }
+    return tree(root, { depth })
+  },
   audit: (_, { root, values }) =>
     audit(root, {
       tag: values.tag,
