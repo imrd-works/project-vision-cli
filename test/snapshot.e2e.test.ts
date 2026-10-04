@@ -21,6 +21,7 @@ describe('collectSnapshot', () => {
       .write('.beacons/zones.yml', ZONES)
       .write('.beacons/checkpoints.yml', PLAN)
       .write('src/widgets/pricing/Toggle.tsx', 'export const Toggle = 1\n')
+      .write('.beacons/audits/pricing/round-1/ann-x-io.md', '---\nauthor: ann@x.io\n---\n')
     repo.commitAll(
       'feat(home): pricing [BEACON: home.pricing completed]',
       '2026-09-30T12:00:00+03:00'
@@ -41,6 +42,9 @@ describe('collectSnapshot', () => {
       commits: [{ subject: 'feat(home): pricing [BEACON: home.pricing completed]' }],
     })
     expect(snapshot.files.config).toBeUndefined()
+    expect(snapshot.audits).toEqual([
+      { path: '.beacons/audits/pricing/round-1/ann-x-io.md', text: '---\nauthor: ann@x.io\n---\n' },
+    ])
     expect(indexView(snapshot).index?.zones).toContainEqual(
       expect.objectContaining({ id: 'home.pricing', state: 'completed' })
     )

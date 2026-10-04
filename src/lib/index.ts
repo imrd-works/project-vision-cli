@@ -9,10 +9,18 @@ export type {
   ItemReport,
   LineReport,
 } from '../core/checkpoint-report.js'
+export type {
+  AuditReport,
+  AuditRound,
+  AuditSummary,
+  CheckpointAudit,
+  Finding,
+} from '../core/audit.js'
 export type { CommitRecord, History } from '../core/history.js'
 export type { Problem } from '../core/problem.js'
 export type { ProjectIndex } from '../core/project-index.js'
 export {
+  auditView,
   historyView,
   indexView,
   type IndexView,

@@ -1,3 +1,4 @@
+import { type CheckpointAudit, collectAudits } from './audit.js'
 import { type LineReport, reportLine, type ZoneFacts } from './checkpoint-report.js'
 import { type CheckpointPlan, parseCheckpoints } from './checkpoints.js'
 import { type BeaconConfig, DEFAULT_CONFIG, parseConfig } from './config.js'
@@ -22,6 +23,8 @@ export interface RepositorySnapshot {
   index?: ProjectIndex
   /** Recent non-merge commits, newest first. */
   commits: CommitRecord[]
+  /** Cross-audit reports and summaries (`.beacons/audits/**`). */
+  audits?: { path: string; text: string }[]
 }
 
 export type ManifestState =
@@ -123,6 +126,27 @@ export function combineLines(lines: readonly LineInput[], options: TimelineOptio
     today: options.today,
     stagnationDays: options.stagnationDays,
   })
+}
+
+/** The cross-audits of a snapshot's line: reports and summaries by checkpoint (`line:id`). */
+export function auditView(snapshot: RepositorySnapshot): {
+  line?: string
+  audits: CheckpointAudit[]
+} {
+  const audits = [
+    ...collectAudits(
+      snapshot.files.checkpoints === undefined ? [] : (snapshot.audits ?? [])
+    ).values(),
+  ]
+  const line = lineName(snapshot)
+  return line === undefined ? { audits } : { line, audits }
+}
+
+function lineName(snapshot: RepositorySnapshot): string | undefined {
+  const state = manifestState(snapshot)
+  if (state.kind !== 'ok' || snapshot.files.checkpoints === undefined) return undefined
+  const plan = parseCheckpoints(snapshot.files.checkpoints, state.manifest)
+  return plan.ok ? plan.plan.line : undefined
 }
 
 /** A snapshot's line; undefined when it has no zone map or no plan. */
