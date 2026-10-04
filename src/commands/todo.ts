@@ -1,4 +1,4 @@
-import { todoFor } from '../core/timeline.js'
+import { type Todo, todoFor } from '../core/timeline.js'
 import { authorEmail } from '../workspace/git.js'
 import { projectTimeline } from '../workspace/timeline-builder.js'
 
@@ -16,7 +16,12 @@ export function todo(
   const built = projectTimeline(lineSources(root, options.with))
   if (!('timeline' in built))
     return result(EXIT.ok, ['• Чекпоинтов нет — и задач тоже'], { owner, debts: [], items: [] })
-  const list = todoFor(built.timeline, owner)
+  return describeTodo(todoFor(built.timeline, owner))
+}
+
+/** A developer's list as text, local or from the server's timeline. */
+export function describeTodo(list: Todo): CommandResult {
+  const { owner } = list
   const lines = [
     `Задачи ${owner}:`,
     ...list.debts.map((debt, index) => {
