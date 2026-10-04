@@ -1,2 +1,3 @@
-node scripts/check-branch-name.mjs
-npx lint-staged --concurrent false
+. .husky/run-in-dev.sh
+run node scripts/check-branch-name.mjs
+run npx lint-staged --concurrent false

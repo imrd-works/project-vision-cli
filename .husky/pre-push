@@ -1,2 +1,3 @@
-node scripts/check-branch-name.mjs
-npm run verify
+. .husky/run-in-dev.sh
+run node scripts/check-branch-name.mjs
+run npm run verify
