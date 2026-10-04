@@ -10,6 +10,7 @@ import {
   type Operation,
   type PushResult,
   pushResultSchema,
+  roundStartedSchema,
 } from '../core/sync.js'
 
 const API = '/api/v1'
@@ -43,6 +44,16 @@ export class ServerClient {
   pull(project: string, since?: { revision: number; day: string }): Promise<Bundle> {
     const query = since ? `?since=${String(since.revision)}&day=${since.day}` : ''
     return this.call('GET', `/projects/${project}/sync${query}`, bundleSchema)
+  }
+
+  /** Opens the next cross-audit round of a checkpoint (`line:id`) on its current commit. */
+  startRound(project: string, checkpoint: string): Promise<{ round: number; commit: string }> {
+    return this.call(
+      'POST',
+      `/projects/${project}/audits/${encodeURIComponent(checkpoint)}/rounds`,
+      roundStartedSchema,
+      {}
+    )
   }
 
   push(project: string, operations: readonly Operation[]): Promise<PushResult> {

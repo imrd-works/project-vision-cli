@@ -34,10 +34,10 @@ export function checkpoints(root: string, options: { with: readonly string[] }):
   return describeTimeline(projectTimeline(lineSources(root, options.with)))
 }
 
-/** Text and JSON of a timeline, local or the server's; notes to checkpoints go under them. */
+/** Text and JSON of a timeline, local or the server's; extra lines (notes, audits) go under checkpoints. */
 export function describeTimeline(
   built: TimelineResult,
-  notes: ReadonlyMap<string, { text: string; pending: boolean }> = new Map()
+  extras: ReadonlyMap<string, readonly string[]> = new Map()
 ): CommandResult {
   if ('missing' in built) {
     return result(
@@ -59,24 +59,21 @@ export function describeTimeline(
   return result(
     EXIT.ok,
     [
-      ...timeline.lines.flatMap((line) => describeLine(line, notes)),
+      ...timeline.lines.flatMap((line) => describeLine(line, extras)),
       ...timeline.problems.map((problem) => formatProblem(problem)),
     ],
     timeline
   )
 }
 
-function describeLine(
-  line: LineReport,
-  notes: ReadonlyMap<string, { text: string; pending: boolean }>
-): string[] {
+function describeLine(line: LineReport, extras: ReadonlyMap<string, readonly string[]>): string[] {
   const { done, total } = line.progress
   const percent = total === 0 ? 0 : Math.round((done / total) * 100)
   return [
     `${line.title} (${line.line}) — пунктов ${String(done)} из ${String(total)}, ${String(percent)}%`,
     ...line.checkpoints.flatMap((checkpoint) => [
       ...describeCheckpoint(checkpoint),
-      ...describeNote(notes.get(checkpoint.ref)),
+      ...(extras.get(checkpoint.ref) ?? []).map((extra) => `      ${extra}`),
     ]),
   ]
 }
@@ -122,9 +119,4 @@ function describeDebt(debt: DebtReport): string {
   const unblocked = debt.unblocked ? ` · можно закрывать — ${debt.waitsFor ?? ''} готов` : ''
   const waits = !debt.unblocked && debt.waitsFor ? ` · ждёт ${debt.waitsFor}` : ''
   return `⚑ техдолг ${debt.id}: ${debt.reason} — ${debt.owner}, до ${debt.effectiveDeadline}${overdue}${unblocked}${waits}`
-}
-
-function describeNote(note: { text: string; pending: boolean } | undefined): string[] {
-  if (!note) return []
-  return [`      ✎ ${note.text}${note.pending ? ' (не отправлена)' : ''}`]
 }

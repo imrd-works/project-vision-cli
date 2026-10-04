@@ -48,9 +48,12 @@ const HELP = `beacon — зоны и маяки Project Vision
   checkpoints [--with <репо>] [--team]
                                 линии чекпоинтов: пункты, стоперы, техдолг, застой;
                                 --team — все линии проекта по данным сервера команды
+  audit start <чп>              открыть раунд кросс-аудита на сервере команды
   audit report <чп> [--model m] мой отчёт раунда: .beacons/audits/<чп>/round-<n>/<я>.md
   audit merge <чп>              все находки раунда и сводка для решений (summary.md)
   audit status <чп>             раунды, отчёты, сводки
+  sign <чп> agree|accept-risk|object [--comment …]
+                                подпись под текущим раундом кросс-аудита
   checkpoint tick <чп> <пункт>  отметить ручной пункт
   checkpoint close <чп> [--conditional --reason … --deadline ГГГГ-ММ-ДД --owner email
                     --waits-for линия:чп --zones a,b --debt-id id]
@@ -101,6 +104,7 @@ const OPTIONS = {
   'debt-id': { type: 'string' },
   checkpoint: { type: 'string' },
   model: { type: 'string' },
+  comment: { type: 'string' },
   team: { type: 'boolean' },
   server: { type: 'string' },
   project: { type: 'string' },
@@ -155,10 +159,20 @@ export function runCli(argv: readonly string[], io: Io): number | Promise<number
     io.err('✖ beacon работает внутри git-репозитория')
     return EXIT.failed
   }
-  if (Object.hasOwn(LONG_RUNNING, command)) return LONG_RUNNING[command]?.(context) ?? EXIT.usage
+  const long = longRunning(command, rest)
+  if (long) return long(context)
   const outcome = dispatch(command, rest, context)
   print(outcome, io, values.json === true)
   return outcome.code
+}
+
+/** `audit start` talks to the server; the other audit steps work in the working copy. */
+function longRunning(
+  command: string,
+  args: readonly string[]
+): ((context: Context) => Promise<number>) | undefined {
+  const name = command === 'audit' && args[0] === 'start' ? 'audit start' : command
+  return Object.hasOwn(LONG_RUNNING, name) ? LONG_RUNNING[name] : undefined
 }
 
 /** The repository to work in; logging in and out of a named server needs none. */

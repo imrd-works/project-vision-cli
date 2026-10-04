@@ -41,6 +41,59 @@ export const conflictSchema = z.object({
   createdBy: person,
 })
 
+export const VERDICTS = ['agree', 'accept-risk', 'object'] as const
+export type Verdict = (typeof VERDICTS)[number]
+
+/** The cross-audit of a checkpoint as the server sees it: rounds, reports in git, signatures. */
+export const auditStateSchema = z.object({
+  checkpoint: z.string(),
+  title: z.string(),
+  auditors: z.array(z.string()),
+  consolidator: z.string().optional(),
+  /** The current round; null — not started. */
+  round: z.number().nullable(),
+  status: z.enum(['not-started', 'auditing', 'objected', 'passed']),
+  closedWithoutAudit: z.boolean(),
+  rounds: z.array(
+    z.object({
+      round: z.number(),
+      commit: z.string(),
+      startedBy: z.string(),
+      startedAt: z.string(),
+      reports: z.array(
+        z.object({
+          author: z.string(),
+          model: z.string().optional(),
+          path: z.string(),
+          findings: z.number(),
+        })
+      ),
+      summary: z
+        .object({
+          path: z.string(),
+          fixed: z.number(),
+          disputed: z.number(),
+          accepted: z.number(),
+          open: z.number(),
+        })
+        .nullable(),
+      signatures: z.array(
+        z.object({
+          email: z.string(),
+          name: z.string().optional(),
+          verdict: z.enum(VERDICTS),
+          comment: z.string().optional(),
+          at: z.string(),
+        })
+      ),
+    })
+  ),
+})
+
+export type AuditState = z.infer<typeof auditStateSchema>
+
+export const roundStartedSchema = z.object({ round: z.number(), commit: z.string() })
+
 export const bundleSchema = z.object({
   revision: z.number(),
   day: z.string(),
@@ -62,6 +115,7 @@ export const bundleSchema = z.object({
   timeline: z.unknown().optional(),
   entities: z.array(entitySchema).optional(),
   conflicts: z.array(conflictSchema).optional(),
+  audits: z.array(auditStateSchema).optional(),
 })
 
 export const pushResultSchema = z.object({
@@ -126,4 +180,17 @@ export function versionOf(entities: readonly SyncEntity[], kind: string, key: st
 function noteText(data: unknown): string | undefined {
   const parsed = z.object({ text: z.string() }).safeParse(data)
   return parsed.success ? parsed.data.text : undefined
+}
+
+/** One line about a checkpoint's cross-audit, for the terminal. */
+export function describeAudit(audit: AuditState): string {
+  if (audit.closedWithoutAudit) return '⚠ закрыт без кросс-аудита'
+  const current = audit.rounds.at(-1)
+  if (audit.status === 'not-started' || !current) return '◌ кросс-аудит не начат'
+  const signed = current.signatures.filter((s) => s.verdict !== 'object').length
+  const progress = `раунд ${String(current.round)}, подписей ${String(signed)}/${String(audit.auditors.length)}, отчётов ${String(current.reports.length)}`
+  if (audit.status === 'passed') return `✓ кросс-аудит пройден (${progress})`
+  if (audit.status === 'objected')
+    return `⚠ кросс-аудит: есть возражения — нужен новый раунд (${progress})`
+  return `◎ кросс-аудит: ${progress}`
 }

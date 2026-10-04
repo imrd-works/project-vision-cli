@@ -8,6 +8,7 @@ import {
   syncTarget,
   type Target,
 } from '../commands/sync.js'
+import { sign, startAudit } from '../commands/team-audit.js'
 
 import { type Context, print, usage } from './context.js'
 
@@ -71,6 +72,29 @@ export const TEAM_COMMANDS: Record<string, (context: Context) => Promise<number>
     const text = context.values.delete === true ? undefined : words.join(' ')
     return withTarget(context, (target) =>
       note(context.root, target, context.io.configDir, { ref, text })
+    )
+  },
+  'audit start': (context) => {
+    const [, checkpoint] = context.args
+    if (checkpoint === undefined) return printed(context, usage('beacon audit start <чекпоинт>'))
+    return withTarget(context, (target) =>
+      startAudit(context.root, target, context.io.configDir, checkpoint)
+    )
+  },
+  sign: (context) => {
+    const [checkpoint, verdict] = context.args
+    if (checkpoint === undefined || verdict === undefined) {
+      return printed(
+        context,
+        usage('beacon sign <чекпоинт> agree|accept-risk|object [--comment …]')
+      )
+    }
+    return withTarget(context, (target) =>
+      sign(context.root, target, context.io.configDir, {
+        checkpoint,
+        verdict,
+        comment: context.values.comment,
+      })
     )
   },
 }
