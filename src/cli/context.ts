@@ -22,6 +22,8 @@ export interface Io {
 }
 
 export interface Values {
+  checkpoint?: string
+  model?: string
   dir?: string
   tag?: string
   zone?: string

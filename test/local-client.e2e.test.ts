@@ -196,6 +196,7 @@ describe('local client', () => {
       const { tools } = await client.listTools()
       expect(tools.map((tool) => tool.name).toSorted((a, b) => a.localeCompare(b))).toEqual([
         'architecture_tree',
+        'audit_checkpoint',
         'audit_context',
         'checkpoints',
         'list_zones',

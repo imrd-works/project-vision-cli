@@ -52,6 +52,10 @@ const checkpointSchema = z.strictObject({
     .strictObject({ date: day, by: email.optional(), conditional: z.boolean().default(false) })
     .optional(),
   debts: z.array(debtSchema).default([]),
+  /** Who audits it (the item owners by default) and who consolidates the findings. */
+  audit: z
+    .strictObject({ auditors: z.array(email).min(1).optional(), consolidator: email.optional() })
+    .optional(),
 })
 
 const fileSchema = z.strictObject({

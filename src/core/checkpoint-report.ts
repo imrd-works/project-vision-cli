@@ -93,6 +93,8 @@ export interface CheckpointReport {
   blocks: string[]
   /** Owners who have not moved on their part for too long. Set by the timeline. */
   stagnant: Stagnation[]
+  /** Who signs its cross-audit: the plan's auditors, else the owners of its items. */
+  audit: { auditors: string[]; consolidator?: string }
 }
 
 export interface LineReport {
@@ -162,7 +164,15 @@ function reportCheckpoint(
     blockedBy: [],
     blocks: [],
     stagnant: [],
+    audit: auditorsOf(checkpoint),
   }
+}
+
+function auditorsOf(checkpoint: PlannedCheckpoint): { auditors: string[]; consolidator?: string } {
+  const owners = checkpoint.items.flatMap((item) => (item.owner === undefined ? [] : [item.owner]))
+  const auditors = [...new Set((checkpoint.audit?.auditors ?? owners).map((e) => e.toLowerCase()))]
+  const consolidator = checkpoint.audit?.consolidator?.toLowerCase()
+  return consolidator === undefined ? { auditors } : { auditors, consolidator }
 }
 
 function reportItem(item: PlanItem, facts: (zone: string) => ZoneFacts | undefined): ItemReport {
