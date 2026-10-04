@@ -35,6 +35,22 @@ export interface BeaconConfig {
   stagnation: { days: number }
   /** The team server and the project this repository is a line of (`beacon sync`). */
   server?: { url: string; project: string }
+  /** How the hooks check who makes a commit, against the people of the last `beacon sync`. */
+  identity: IdentityPolicy
+}
+
+export const IDENTITY_CHECKS = ['signature', 'email', 'off'] as const
+
+export interface IdentityPolicy {
+  /**
+   * signature — commits are signed by an SSH key of the author's linked git account;
+   * email — the author's email belongs to a person of the project; off — no check.
+   */
+  check: (typeof IDENTITY_CHECKS)[number]
+  /** The team's data older than this many days is stale. */
+  staleDays: number
+  /** Stale or missing data: hold — reject commits until `beacon sync`; allow — warn. */
+  whenStale: 'hold' | 'allow'
 }
 
 /** The project's own tools in their JSON mode. `--no`: never download a missing tool. */
@@ -52,6 +68,7 @@ export const DEFAULT_CONFIG: BeaconConfig = {
   dynamics: { gapDays: 3 },
   techDebt: { limitPerDeveloper: 2, extendDays: 7 },
   stagnation: { days: 3 },
+  identity: { check: 'email', staleDays: 7, whenStale: 'allow' },
 }
 
 const configSchema = z.strictObject({
@@ -78,6 +95,13 @@ const configSchema = z.strictObject({
   stagnation: z
     .strictObject({ days: z.number().int().min(1).max(60).default(3) })
     .default({ days: 3 }),
+  identity: z
+    .strictObject({
+      check: z.enum(IDENTITY_CHECKS).default('email'),
+      staleDays: z.number().int().min(1).max(90).default(7),
+      whenStale: z.enum(['hold', 'allow']).default('allow'),
+    })
+    .default({ check: 'email', staleDays: 7, whenStale: 'allow' }),
   server: z
     .strictObject({
       url: z.url({ protocol: /^https?$/ }).transform((url) => url.replace(/\/+$/, '')),
@@ -110,6 +134,7 @@ export function parseConfig(text: string | undefined): ConfigResult {
       dynamics: parsed.data.dynamics,
       techDebt: parsed.data.techDebt,
       stagnation: parsed.data.stagnation,
+      identity: parsed.data.identity,
       ...(parsed.data.server === undefined ? {} : { server: parsed.data.server }),
       validation: parsed.data.validation.map((entry) => ({
         name: entry.name ?? entry.tool,

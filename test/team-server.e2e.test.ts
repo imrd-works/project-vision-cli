@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -453,6 +453,26 @@ describe('team server', () => {
       rmSync(keys, { recursive: true, force: true })
     })
 
+    function identity(check: string): void {
+      repo.write(
+        '.beacons/config.yml',
+        `version: 1\nserver:\n  url: ${server.url}\n  project: ${PROJECT}\nidentity:\n  check: ${check}\n`
+      )
+    }
+
+    function commitMsg(): { code: number; out: string; err: string } {
+      const file = path.join(repo.root, '.git', 'COMMIT_EDITMSG')
+      writeFileSync(file, 'docs: readme\n')
+      return repo.run(['hook', 'commit-msg', file])
+    }
+
+    function prePush(): { code: number; out: string; err: string } {
+      const head = repo.git('rev-parse', 'HEAD').trim()
+      return repo.run(['hook', 'pre-push', 'origin'], {
+        stdin: `refs/heads/main ${head} refs/heads/main ${'0'.repeat(40)}\n`,
+      })
+    }
+
     it('tells who I am and who owns the zones', async () => {
       expect((await repo.runAsync(['whoami'])).err).toContain('выполните beacon sync')
       expect((await repo.runAsync(['sync'])).out).toContain('людей: 2')
@@ -473,6 +493,7 @@ describe('team server', () => {
       expect(all.out).toContain('backend:billing   не назначен')
       expect((await repo.runAsync(['owners', 'billing'])).out).not.toContain('auth.api')
       expect((await repo.runAsync(['owners', 'nope'])).code).toBe(1)
+      expect(me.out).toContain('почта; данные старше 7 дн. только предупреждают')
     })
 
     it('signs commits with my own key', async () => {
@@ -493,6 +514,62 @@ describe('team server', () => {
       expect(repo.git('log', '--show-signature', '-1')).toContain(
         'Good "git" signature for ann@x.io'
       )
+      expect((await repo.runAsync(['signing', 'oops'])).code).toBe(2)
+    })
+
+    it('checks the authors of commits in the hooks', async () => {
+      await repo.runAsync(['sync'])
+      // The plan is already on the remote: only new commits are pushed.
+      repo.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+      identity('signature')
+      expect(commitMsg().err).toContain('коммиты не подписываются SSH-ключом')
+
+      const bob = await repo.runAsync(['signing', 'setup', '--key', path.join(keys, 'bob.pub')])
+      expect(bob.out).toContain('⚠ Это ключ Bob Kim, а не ваш')
+      expect(commitMsg().err).toContain('ключ подписи принадлежит Bob Kim')
+      repo.write('README.md', 'by bob\n')
+      repo.git('add', '-A')
+      repo.git('commit', '-q', '--no-verify', '-m', 'docs: signed by bob')
+      expect(prePush().err).toContain('test@example.com: подписан ключом другого человека')
+
+      const ann = await repo.runAsync(['signing', 'setup', '--key', path.join(keys, 'ann.pub')])
+      expect(ann.out).toContain('✓ Ключ привязан к вашему git-аккаунту')
+      expect(repo.git('config', 'user.signingkey').trim()).toBe(path.join(keys, 'ann'))
+      expect(commitMsg()).toMatchObject({ code: 0, err: '' })
+      repo.git('commit', '-q', '--amend', '--no-verify', '-m', 'docs: signed by ann')
+      expect(prePush()).toMatchObject({ code: 0, err: '' })
+      expect((await repo.runAsync(['whoami'])).out).toContain(
+        '✓ Коммиты подписываются ключом вашего git-аккаунта'
+      )
+
+      repo.write('README.md', 'unsigned\n')
+      repo.git('add', '-A')
+      repo.git('-c', 'commit.gpgsign=false', 'commit', '-q', '--no-verify', '-m', 'docs: unsigned')
+      expect(prePush().err).toContain('docs: unsigned — test@example.com: не подписан')
+
+      // Trusting the author's email: an unsigned commit of a person passes, a stranger's does not.
+      identity('email')
+      expect(prePush().code).toBe(0)
+      repo.git('config', 'user.email', 'eve@nowhere.io')
+      expect(commitMsg().err).toContain('eve@nowhere.io — не почта участника проекта')
+      repo.write('README.md', 'by eve\n')
+      repo.git('add', '-A')
+      repo.git('-c', 'commit.gpgsign=false', 'commit', '-q', '--no-verify', '-m', 'docs: eve')
+      expect(prePush().err).toContain('eve@nowhere.io: автор — не участник проекта')
+    })
+
+    it('holds commits on stale data when the team asks so', async () => {
+      repo.write(
+        '.beacons/config.yml',
+        `version: 1\nserver:\n  url: ${server.url}\n  project: ${PROJECT}\nidentity:\n  whenStale: hold\n`
+      )
+      expect(commitMsg().err).toContain('нет данных о людях проекта — выполните beacon sync')
+      expect(prePush().err).toContain('нет данных о людях проекта')
+      identity('email')
+      expect(commitMsg()).toMatchObject({
+        code: 0,
+        out: expect.stringContaining('⚠ beacon: нет данных') as string,
+      })
       expect((await repo.runAsync(['signing', 'oops'])).code).toBe(2)
     })
   })
