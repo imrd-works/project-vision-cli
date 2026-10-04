@@ -6,6 +6,7 @@ import type {
   LineReport,
 } from '../core/checkpoint-report.js'
 import { CHECKPOINTS_PATH } from '../core/checkpoints.js'
+import type { TimelineResult } from '../core/snapshot.js'
 import { findRepoRoot } from '../workspace/git.js'
 import { type LineSource, projectTimeline } from '../workspace/timeline-builder.js'
 
@@ -30,7 +31,14 @@ export function lineSources(root: string, others: readonly string[]): LineSource
 
 /** `beacon checkpoints [--with ../frontend]`: the lines of checkpoints, their state and debt. */
 export function checkpoints(root: string, options: { with: readonly string[] }): CommandResult {
-  const built = projectTimeline(lineSources(root, options.with))
+  return describeTimeline(projectTimeline(lineSources(root, options.with)))
+}
+
+/** Text and JSON of a timeline, local or the server's; notes to checkpoints go under them. */
+export function describeTimeline(
+  built: TimelineResult,
+  notes: ReadonlyMap<string, { text: string; pending: boolean }> = new Map()
+): CommandResult {
   if ('missing' in built) {
     return result(
       EXIT.ok,
@@ -51,19 +59,25 @@ export function checkpoints(root: string, options: { with: readonly string[] }):
   return result(
     EXIT.ok,
     [
-      ...timeline.lines.flatMap((line) => describeLine(line)),
+      ...timeline.lines.flatMap((line) => describeLine(line, notes)),
       ...timeline.problems.map((problem) => formatProblem(problem)),
     ],
     timeline
   )
 }
 
-function describeLine(line: LineReport): string[] {
+function describeLine(
+  line: LineReport,
+  notes: ReadonlyMap<string, { text: string; pending: boolean }>
+): string[] {
   const { done, total } = line.progress
   const percent = total === 0 ? 0 : Math.round((done / total) * 100)
   return [
     `${line.title} (${line.line}) — пунктов ${String(done)} из ${String(total)}, ${String(percent)}%`,
-    ...line.checkpoints.flatMap((checkpoint) => describeCheckpoint(checkpoint)),
+    ...line.checkpoints.flatMap((checkpoint) => [
+      ...describeCheckpoint(checkpoint),
+      ...describeNote(notes.get(checkpoint.ref)),
+    ]),
   ]
 }
 
@@ -108,4 +122,9 @@ function describeDebt(debt: DebtReport): string {
   const unblocked = debt.unblocked ? ` · можно закрывать — ${debt.waitsFor ?? ''} готов` : ''
   const waits = !debt.unblocked && debt.waitsFor ? ` · ждёт ${debt.waitsFor}` : ''
   return `⚑ техдолг ${debt.id}: ${debt.reason} — ${debt.owner}, до ${debt.effectiveDeadline}${overdue}${unblocked}${waits}`
+}
+
+function describeNote(note: { text: string; pending: boolean } | undefined): string[] {
+  if (!note) return []
+  return [`      ✎ ${note.text}${note.pending ? ' (не отправлена)' : ''}`]
 }
