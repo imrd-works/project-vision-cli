@@ -3,6 +3,8 @@ import { parseArgs, styleText } from 'node:util'
 
 import { audit } from '../commands/audit.js'
 import { check } from '../commands/check.js'
+import { checkpointCommand, debtCommand } from '../commands/checkpoint.js'
+import { checkpoints } from '../commands/checkpoints.js'
 import { history } from '../commands/history.js'
 import { hook } from '../commands/hook.js'
 import { init } from '../commands/init.js'
@@ -13,6 +15,7 @@ import { type CommandResult, EXIT, result } from '../commands/result.js'
 import { packageVersion, type RunContext } from '../commands/running.js'
 import { DEFAULT_ORIGINS, DEFAULT_PORT, serveCommand } from '../commands/serve.js'
 import { status } from '../commands/status.js'
+import { todo } from '../commands/todo.js'
 import { tree } from '../commands/tree.js'
 import { validate } from '../commands/validate.js'
 import { watchCommand } from '../commands/watch.js'
@@ -47,6 +50,13 @@ const HELP = `beacon — зоны и маяки Project Vision
   tree [--depth <n>]            дерево архитектуры: папки, число файлов, зоны
   history                       коммиты по зонам, их авторы и провалы в разработке
   validate                      проверить архитектуру инструментами проекта (.beacons/config.yml)
+  checkpoints [--with <репо>]   линии чекпоинтов: пункты, стоперы, техдолг, застой
+  checkpoint tick <чп> <пункт>  отметить ручной пункт
+  checkpoint close <чп> [--conditional --reason … --deadline ГГГГ-ММ-ДД --owner email
+                    --waits-for линия:чп --zones a,b --debt-id id]
+                                закрыть чекпоинт; условно — с техдолгом
+  debt close <чп> <долг>        закрыть техдолг
+  todo [--owner email]          мои техдолги (приоритетные первыми) и незакрытые пункты
   watch                         держать индекс актуальным при изменении файлов
   serve [--port 4317] [--host 127.0.0.1] [--origin <url>]
                                 локальный API для дашборда с живыми обновлениями
@@ -75,6 +85,13 @@ const OPTIONS = {
   host: { type: 'string' },
   origin: { type: 'string', multiple: true },
   depth: { type: 'string' },
+  conditional: { type: 'boolean' },
+  reason: { type: 'string' },
+  owner: { type: 'string' },
+  deadline: { type: 'string' },
+  'waits-for': { type: 'string' },
+  zones: { type: 'string' },
+  'debt-id': { type: 'string' },
 } as const
 
 const PARSE_CONFIG = {
@@ -142,6 +159,13 @@ interface Values {
   origin?: string[]
   depth?: string
   json?: boolean
+  conditional?: boolean
+  reason?: string
+  owner?: string
+  deadline?: string
+  'waits-for'?: string
+  zones?: string
+  'debt-id'?: string
 }
 
 interface Context {
@@ -176,6 +200,7 @@ const LONG_RUNNING: Record<string, (context: Context) => Promise<number>> = {
       port,
       host: context.values.host ?? '127.0.0.1',
       origins: context.values.origin ?? DEFAULT_ORIGINS,
+      with: (context.values.with ?? []).map((dir) => path.resolve(context.io.cwd, dir)),
     }
     return serveCommand(context.root, options, runContext(context))
   },
@@ -200,6 +225,24 @@ const COMMANDS: Record<string, Handler> = {
       : which(context.root, fromCwd(context, file)),
   status: (_, { root }) => status(root),
   history: (_, { root }) => history(root),
+  checkpoints: (_, { root, io, values }) =>
+    checkpoints(root, { with: (values.with ?? []).map((dir) => path.resolve(io.cwd, dir)) }),
+  checkpoint: (args, { root, values }) =>
+    checkpointCommand(root, args, {
+      conditional: values.conditional,
+      reason: values.reason,
+      owner: values.owner,
+      deadline: values.deadline,
+      waitsFor: values['waits-for'],
+      zones: values.zones,
+      debtId: values['debt-id'],
+    }),
+  debt: (args, { root }) => debtCommand(root, args),
+  todo: (_, { root, io, values }) =>
+    todo(root, {
+      owner: values.owner,
+      with: (values.with ?? []).map((dir) => path.resolve(io.cwd, dir)),
+    }),
   tree: (_, { root, values }) => {
     const depth = values.depth === undefined ? undefined : Number(values.depth)
     if (depth !== undefined && (!Number.isInteger(depth) || depth < 1)) {

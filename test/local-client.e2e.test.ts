@@ -197,7 +197,9 @@ describe('local client', () => {
       expect(tools.map((tool) => tool.name).toSorted((a, b) => a.localeCompare(b))).toEqual([
         'architecture_tree',
         'audit_context',
+        'checkpoints',
         'list_zones',
+        'todo',
         'validate_architecture',
         'which_zone',
         'zone_status',

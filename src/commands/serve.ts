@@ -1,9 +1,11 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 
-import { projectName } from '../workspace/git.js'
+import { todoFor } from '../core/timeline.js'
+import { authorEmail, findRepoRoot, projectName } from '../workspace/git.js'
 import { LiveIndex, type Snapshot } from '../workspace/live-index.js'
 import { LiveValidation } from '../workspace/live-validation.js'
+import { type LineSource, projectTimeline } from '../workspace/timeline-builder.js'
 
 import { auditMarkdown } from './audit.js'
 import { EXIT, requireProject } from './result.js'
@@ -21,6 +23,8 @@ import { which } from './which.js'
  *   GET /api/audit?tag=…     audit context pack (Markdown), see `beacon audit`
  *   GET /api/history         commits by zones and development dynamics
  *   GET /api/validation      architecture checks; SSE `validation` when a run finishes
+ *   GET /api/timeline        checkpoint lines of this and `--with` repositories
+ *   GET /api/todo?owner=…    one developer's debts and items (git user.email by default)
  *
  * The API serves source code, so it answers only to local hosts (no DNS rebinding) and to the
  * allowed browser origins (no reading by arbitrary websites).
@@ -29,6 +33,8 @@ import { which } from './which.js'
 export interface ServeOptions {
   port: number
   host: string
+  /** Sibling repositories whose checkpoint lines join the timeline. */
+  with?: readonly string[]
   /** Browser origins allowed to call the API, e.g. the dashboard dev server. */
   origins: readonly string[]
 }
@@ -47,6 +53,8 @@ const HEARTBEAT_MS = 25_000
 interface Context {
   root: string
   live: LiveIndex
+  /** Live indexes of the `--with` repositories. */
+  others: { root: string; live: LiveIndex }[]
   validation: LiveValidation
   options: ServeOptions
   clients: Set<ServerResponse>
@@ -55,11 +63,21 @@ interface Context {
 export async function startServer(root: string, options: ServeOptions): Promise<RunningServer> {
   const live = new LiveIndex(root).start()
   const validation = new LiveValidation(root, () => live.current().index)
-  const context: Context = { root, live, validation, options, clients: new Set() }
-  const unsubscribe = live.subscribe((snapshot) => {
-    for (const client of context.clients) sendEvent(client, 'index', { version: snapshot.version })
+  const others = (options.with ?? []).map((dir) => {
+    const otherRoot = findRepoRoot(dir) ?? dir
+    return { root: otherRoot, live: new LiveIndex(otherRoot).start() }
+  })
+  const context: Context = { root, live, others, validation, options, clients: new Set() }
+  let version = 0
+  const notify = (): void => {
+    version++
+    for (const client of context.clients) sendEvent(client, 'index', { version })
+  }
+  const unsubscribe = live.subscribe(() => {
+    notify()
     validation.schedule()
   })
+  for (const other of others) other.live.subscribe(notify)
   validation.subscribe((snapshot) => {
     const data = { version: snapshot.version, running: snapshot.running }
     for (const client of context.clients) sendEvent(client, 'validation', data)
@@ -86,6 +104,7 @@ export async function startServer(root: string, options: ServeOptions): Promise<
       unsubscribe()
       validation.stop()
       live.stop()
+      for (const other of others) other.live.stop()
       for (const client of context.clients) client.end()
       await new Promise<void>((resolve) =>
         server.close(() => {
@@ -130,6 +149,8 @@ const ROUTES: Record<string, Route> = {
         '/api/audit?tag=&zone=',
         '/api/history',
         '/api/validation',
+        '/api/timeline',
+        '/api/todo?owner=',
       ],
     })
   },
@@ -142,6 +163,18 @@ const ROUTES: Record<string, Route> = {
   },
   '/api/validation': (_url, response, { validation }) => {
     sendJson(response, 200, validation.current())
+  },
+  '/api/timeline': (_url, response, context) => {
+    sendJson(response, 200, projectTimeline(timelineSources(context)))
+  },
+  '/api/todo': (url, response, context) => {
+    const owner = url.searchParams.get('owner') ?? authorEmail(context.root)
+    const built = projectTimeline(timelineSources(context))
+    if (owner === undefined || !('timeline' in built)) {
+      sendJson(response, 200, { owner, debts: [], items: [], stagnant: [] })
+      return
+    }
+    sendJson(response, 200, todoFor(built.timeline, owner))
   },
   '/api/events': (_url, response, context) => {
     openEventStream(response, context)
@@ -169,6 +202,13 @@ const ROUTES: Record<string, Route> = {
     })
     response.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8' }).end(markdown)
   },
+}
+
+function timelineSources({ root, live, others, validation }: Context): LineSource[] {
+  return [
+    { root, index: live.current().index, runs: validation.current().runs },
+    ...others.map((other) => ({ root: other.root, index: other.live.current().index })),
+  ]
 }
 
 function handle(request: IncomingMessage, response: ServerResponse, context: Context): void {

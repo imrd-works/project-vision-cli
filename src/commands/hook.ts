@@ -4,6 +4,7 @@ import { type CommitCheck, checkCommit, touchedZones } from '../core/commit-chec
 import { appendBeacons, parseCommitBeacons } from '../core/commit-message.js'
 import { resolveZoneId } from '../core/manifest.js'
 import { hasErrors } from '../core/problem.js'
+import { debtLimitViolation } from '../workspace/debt-limit.js'
 import { commitMessage, commitSubject, gitPath, listCommits, tryGit } from '../workspace/git.js'
 import type { HookName } from '../workspace/hooks.js'
 import { commitChanges, loadProject, stagedChanges } from '../workspace/project.js'
@@ -60,8 +61,20 @@ function commitMsg(root: string, [file]: readonly string[]): CommandResult {
       { ok: false, problems: load.problems }
     )
   }
-  const check = checkCommit(load.project, stagedChanges(root), readFileSync(file, 'utf8'))
-  if (passes(check)) return result(EXIT.ok, [], { ok: true, zones: check.zones })
+  const message = readFileSync(file, 'utf8')
+  const check = checkCommit(load.project, stagedChanges(root), message)
+  if (passes(check)) {
+    const limit = debtLimitViolation(
+      load.project,
+      check.zones.map((touch) => touch.zone),
+      message
+    )
+    if (limit === undefined) return result(EXIT.ok, [], { ok: true, zones: check.zones })
+    return result(EXIT.failed, ['✖ beacon: коммит отклонён — превышен лимит техдолга', ...limit], {
+      ok: false,
+      debtLimit: limit,
+    })
+  }
   return result(EXIT.failed, ['✖ beacon: коммит отклонён', ...explain(check)], {
     ok: false,
     ...check,

@@ -6,10 +6,12 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 
 import { auditMarkdown } from './audit.js'
+import { checkpoints } from './checkpoints.js'
 import { list } from './list.js'
 import { type CommandResult, EXIT, requireProject } from './result.js'
 import { packageVersion, type RunContext, untilAborted } from './running.js'
 import { status } from './status.js'
+import { todo } from './todo.js'
 import { tree } from './tree.js'
 import { validate } from './validate.js'
 import { which } from './which.js'
@@ -105,6 +107,26 @@ export function createMcpServer(root: string): McpServer {
         "Runs the project's architecture checks (ESLint boundaries, steiger, dependency-cruiser) and returns violations with their zones",
     },
     async () => json(await validate(root))
+  )
+  server.registerTool(
+    'checkpoints',
+    {
+      title: 'Checkpoints',
+      description:
+        'Checkpoint lines with item progress, stoppers, technical debt (overdue, unblocked) and stuck developers',
+    },
+    () => json(checkpoints(root, { with: [] }))
+  )
+  server.registerTool(
+    'todo',
+    {
+      title: 'Developer todo',
+      description: "A developer's technical debt (priority first) and unfinished checkpoint items",
+      inputSchema: {
+        owner: z.string().optional().describe('git user.email; the local author by default'),
+      },
+    },
+    ({ owner }) => json(todo(root, { owner, with: [] }))
   )
   return server
 }
