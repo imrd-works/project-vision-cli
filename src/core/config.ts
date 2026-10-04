@@ -25,6 +25,14 @@ export interface Validator {
 export interface BeaconConfig {
   validation: Validator[]
   dynamics: { gapDays: number }
+  techDebt: {
+    /** Open debts a developer may carry; beyond it, commits outside debt zones are rejected. */
+    limitPerDeveloper: number
+    /** An overdue debt is extended by this many days at a time. */
+    extendDays: number
+  }
+  /** Working days without commits in one's zones before a developer counts as stuck. */
+  stagnation: { days: number }
 }
 
 /** The project's own tools in their JSON mode. `--no`: never download a missing tool. */
@@ -37,7 +45,12 @@ const DEFAULTS: Record<ValidatorTool, { command: string; rules: string[] }> = {
   'dependency-cruiser': { command: 'npx --no depcruise src --output-type json', rules: [] },
 }
 
-export const DEFAULT_CONFIG: BeaconConfig = { validation: [], dynamics: { gapDays: 3 } }
+export const DEFAULT_CONFIG: BeaconConfig = {
+  validation: [],
+  dynamics: { gapDays: 3 },
+  techDebt: { limitPerDeveloper: 2, extendDays: 7 },
+  stagnation: { days: 3 },
+}
 
 const configSchema = z.strictObject({
   version: z.literal(1),
@@ -54,6 +67,15 @@ const configSchema = z.strictObject({
   dynamics: z
     .strictObject({ gapDays: z.number().int().min(1).max(30).default(3) })
     .default({ gapDays: 3 }),
+  techDebt: z
+    .strictObject({
+      limitPerDeveloper: z.number().int().min(0).max(50).default(2),
+      extendDays: z.number().int().min(1).max(90).default(7),
+    })
+    .default({ limitPerDeveloper: 2, extendDays: 7 }),
+  stagnation: z
+    .strictObject({ days: z.number().int().min(1).max(60).default(3) })
+    .default({ days: 3 }),
 })
 
 export type ConfigResult = { ok: true; config: BeaconConfig } | { ok: false; problems: Problem[] }
@@ -78,6 +100,8 @@ export function parseConfig(text: string | undefined): ConfigResult {
     ok: true,
     config: {
       dynamics: parsed.data.dynamics,
+      techDebt: parsed.data.techDebt,
+      stagnation: parsed.data.stagnation,
       validation: parsed.data.validation.map((entry) => ({
         name: entry.name ?? entry.tool,
         tool: entry.tool,
@@ -106,6 +130,13 @@ ${entries}
 
 dynamics:
   gapDays: 3
+
+techDebt:
+  limitPerDeveloper: 2
+  extendDays: 7
+
+stagnation:
+  days: 3
 `
 }
 
