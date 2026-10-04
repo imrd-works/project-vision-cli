@@ -1,11 +1,12 @@
 import { type FSWatcher, watch } from 'node:fs'
 import path from 'node:path'
 
+import { buildHistory, type History, parseCommitLog } from '../core/history.js'
 import type { Problem } from '../core/problem.js'
 import type { ProjectIndex } from '../core/project-index.js'
 
-import { listFiles } from './git.js'
-import { loadProject, scanProject } from './project.js'
+import { commitLog, listFiles } from './git.js'
+import { loadConfig, loadProject, type Project, scanProject } from './project.js'
 
 /** What the live index currently knows. `version` grows on every real change. */
 export interface Snapshot {
@@ -15,6 +16,8 @@ export interface Snapshot {
   /** Zone map problems when it is invalid; markup problems live in `index`. */
   problems: Problem[]
   index: ProjectIndex | undefined
+  /** Commits by zones and development dynamics. */
+  history: History | undefined
 }
 
 type Listener = (snapshot: Snapshot) => void
@@ -82,19 +85,21 @@ export class LiveIndex {
   private build(version: number): Snapshot {
     const generatedAt = new Date().toISOString()
     const load = loadProject(this.root)
+    const empty = { index: undefined, history: undefined }
     if (load.kind === 'missing') {
-      return { version, generatedAt, manifest: 'missing', problems: [], index: undefined }
+      return { version, generatedAt, manifest: 'missing', problems: [], ...empty }
     }
     if (load.kind === 'invalid') {
-      return {
-        version,
-        generatedAt,
-        manifest: 'invalid',
-        problems: load.problems,
-        index: undefined,
-      }
+      return { version, generatedAt, manifest: 'invalid', problems: load.problems, ...empty }
     }
-    return { version, generatedAt, manifest: 'ok', problems: [], index: scanProject(load.project) }
+    return {
+      version,
+      generatedAt,
+      manifest: 'ok',
+      problems: [],
+      index: scanProject(load.project),
+      history: projectHistory(load.project),
+    }
   }
 
   private schedule(file: string): void {
@@ -143,5 +148,15 @@ function isRelevant(file: string): boolean {
 }
 
 function fingerprint(snapshot: Snapshot): string {
-  return JSON.stringify([snapshot.manifest, snapshot.problems, snapshot.index])
+  return JSON.stringify([snapshot.manifest, snapshot.problems, snapshot.index, snapshot.history])
+}
+
+export function projectHistory(project: Project): History {
+  const config = loadConfig(project.root)
+  const gapDays = config.ok ? config.config.dynamics.gapDays : 3
+  return buildHistory(parseCommitLog(commitLog(project.root)), project.manifest, {
+    gapDays,
+    // Local calendar date (sv-SE formats as YYYY-MM-DD).
+    today: new Date().toLocaleDateString('sv-SE'),
+  })
 }

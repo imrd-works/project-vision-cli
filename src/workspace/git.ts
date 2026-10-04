@@ -123,3 +123,15 @@ export function projectName(root: string): string {
     ?.replace(/\.git$/, '')
   return name === undefined || name === '' ? path.basename(root) : name
 }
+
+/** Recent non-merge commits for the history widgets, newest first (see parseCommitLog). */
+export function commitLog(root: string, limit = 5000): string {
+  return (
+    tryGit(root, [
+      'log',
+      '--no-merges',
+      `--max-count=${String(limit)}`,
+      '--format=%H%x1f%an%x1f%ae%x1f%aI%x1f%B%x1e',
+    ]) ?? ''
+  )
+}

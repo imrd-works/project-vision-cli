@@ -1,3 +1,4 @@
+import { buildArchitectureTree, type DirNode } from './architecture-tree.js'
 import { commentStyleFor } from './comment-style.js'
 import { type Manifest, resolveZoneId } from './manifest.js'
 import type { FileMarkup } from './markup.js'
@@ -46,6 +47,8 @@ export interface ProjectIndex {
   coverage: { sourceFiles: number; zonedSourceFiles: number }
   /** Topmost folders with source files and no zones at all. */
   unzonedDirs: string[]
+  /** Folders with file counts and zones: the architecture tree. */
+  tree: DirNode
   problems: Problem[]
 }
 
@@ -86,6 +89,12 @@ export function buildIndex(
   })
 
   const zoned = new Set(files.map((file) => file.path))
+  const zonesByFile = new Map(
+    files.map((file) => [
+      file.path,
+      [...new Set([...file.zones, ...file.regions.flatMap((region) => region.zones)])],
+    ])
+  )
   const sources = scanned.map((file) => file.path).filter((path) => isSourceFile(path))
   return {
     version: 1,
@@ -96,6 +105,9 @@ export function buildIndex(
       zonedSourceFiles: sources.filter((path) => zoned.has(path)).length,
     },
     unzonedDirs: unzonedDirs(sources, zoned),
+    tree: buildArchitectureTree(
+      scanned.map((file) => ({ path: file.path, zones: zonesByFile.get(file.path) ?? [] }))
+    ),
     problems,
   }
 }
