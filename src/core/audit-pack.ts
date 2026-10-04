@@ -11,6 +11,8 @@ export interface ZoneFilter {
   tag?: string | undefined
   /** A zone together with its subzones. */
   zone?: string | undefined
+  /** Zones of a checkpoint, each with its subzones; `label` names the scope in the title. */
+  zones?: { ids: readonly string[]; label: string } | undefined
 }
 
 export interface AuditOptions extends ZoneFilter {
@@ -36,7 +38,8 @@ export function selectZones(index: ProjectIndex, filter: ZoneFilter): IndexedZon
   return index.zones.filter(
     (zone) =>
       (filter.tag === undefined || zone.tags.includes(filter.tag)) &&
-      (filter.zone === undefined || isAncestorOrSelf(filter.zone, zone.id))
+      (filter.zone === undefined || isAncestorOrSelf(filter.zone, zone.id)) &&
+      (filter.zones === undefined || filter.zones.ids.some((id) => isAncestorOrSelf(id, zone.id)))
   )
 }
 
@@ -81,10 +84,11 @@ function withoutTests(zone: IndexedZone, includeTests: boolean): IndexedZone {
   }
 }
 
-function scopeLabel({ tag, zone }: ZoneFilter): string {
+function scopeLabel({ tag, zone, zones }: ZoneFilter): string {
   const parts = [
     ...(tag === undefined ? [] : [`тег ${tag}`]),
     ...(zone === undefined ? [] : [`зона ${zone}`]),
+    ...(zones === undefined ? [] : [zones.label]),
   ]
   return parts.length > 0 ? parts.join(', ') : 'все зоны'
 }

@@ -1,7 +1,6 @@
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 
-import { audit } from '../commands/audit.js'
 import { check } from '../commands/check.js'
 import { checkpointCommand, debtCommand } from '../commands/checkpoint.js'
 import { checkpoints } from '../commands/checkpoints.js'
@@ -23,6 +22,7 @@ import { which } from '../commands/which.js'
 import { findRepoRoot } from '../workspace/git.js'
 import { HOOK_NAMES, type HookName } from '../workspace/hooks.js'
 
+import { auditCommand } from './audit-command.js'
 import { type Context, type Io, print, runContext, usage } from './context.js'
 import { TEAM_COMMANDS, teamView } from './team.js'
 
@@ -40,7 +40,7 @@ const HELP = `beacon — зоны и маяки Project Vision
   which <файл>                  зоны файла и регионов в нём
   status                        покрытие кода зонами, состояния зон, папки без зон
   mark <файл> <зона>            поставить маяк зоны на файл
-  audit [--tag <тег>] [--zone <id>] [--tests] [--no-code]
+  audit [--tag <тег>] [--zone <id>] [--checkpoint <чп>] [--tests] [--no-code]
                                 пакет контекста для аудита нейросетью (Markdown)
   tree [--depth <n>]            дерево архитектуры: папки, число файлов, зоны
   history                       коммиты по зонам, их авторы и провалы в разработке
@@ -48,6 +48,9 @@ const HELP = `beacon — зоны и маяки Project Vision
   checkpoints [--with <репо>] [--team]
                                 линии чекпоинтов: пункты, стоперы, техдолг, застой;
                                 --team — все линии проекта по данным сервера команды
+  audit report <чп> [--model m] мой отчёт раунда: .beacons/audits/<чп>/round-<n>/<я>.md
+  audit merge <чп>              все находки раунда и сводка для решений (summary.md)
+  audit status <чп>             раунды, отчёты, сводки
   checkpoint tick <чп> <пункт>  отметить ручной пункт
   checkpoint close <чп> [--conditional --reason … --deadline ГГГГ-ММ-ДД --owner email
                     --waits-for линия:чп --zones a,b --debt-id id]
@@ -96,6 +99,8 @@ const OPTIONS = {
   'waits-for': { type: 'string' },
   zones: { type: 'string' },
   'debt-id': { type: 'string' },
+  checkpoint: { type: 'string' },
+  model: { type: 'string' },
   team: { type: 'boolean' },
   server: { type: 'string' },
   project: { type: 'string' },
@@ -248,13 +253,7 @@ const COMMANDS: Record<string, Handler> = {
     }
     return tree(root, { depth })
   },
-  audit: (_, { root, values }) =>
-    audit(root, {
-      tag: values.tag,
-      zone: values.zone,
-      includeTests: values.tests === true,
-      code: values.code !== false,
-    }),
+  audit: (args, context) => auditCommand(args, context),
   mark: ([file, zone], context) =>
     file === undefined || zone === undefined
       ? usage('beacon mark <файл> <зона>')

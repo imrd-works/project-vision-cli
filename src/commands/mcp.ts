@@ -7,6 +7,7 @@ import { z } from 'zod'
 
 import { auditMarkdown } from './audit.js'
 import { checkpoints } from './checkpoints.js'
+import { findCheckpoint, zonesOf } from './cross-audit.js'
 import { list } from './list.js'
 import { type CommandResult, EXIT, requireProject } from './result.js'
 import { packageVersion, type RunContext, untilAborted } from './running.js'
@@ -24,7 +25,8 @@ import { which } from './which.js'
 const INSTRUCTIONS = `This repository is mapped into zones (areas of responsibility) with beacons.
 Before reading code for a topic (security, payments…), call list_zones or audit_context with a tag
 or zone: they return exactly the files and line ranges of that topic, so the rest of the repository
-does not need to be read. Call which_zone before editing a file to learn its zone.`
+does not need to be read. Call which_zone before editing a file to learn its zone. For a
+checkpoint's cross-audit, audit_checkpoint returns the code of all its zones.`
 
 const filter = {
   tag: z.string().optional().describe('Audit tag, e.g. "security"'),
@@ -72,6 +74,31 @@ export function createMcpServer(root: string): McpServer {
       const markdown = auditMarkdown(loaded.project, {
         tag,
         zone,
+        includeTests: include_tests ?? false,
+        code: true,
+      })
+      return { content: [{ type: 'text', text: markdown }] }
+    }
+  )
+  server.registerTool(
+    'audit_checkpoint',
+    {
+      title: 'Checkpoint cross-audit',
+      description:
+        'The code of every zone of a checkpoint, for a cross-audit; write findings into the file of `beacon audit report <checkpoint>`',
+      inputSchema: {
+        checkpoint: z.string().describe('Checkpoint ID of this line, e.g. "auth"'),
+        include_tests: z.boolean().optional().describe('Include test files (default: false)'),
+      },
+    },
+    ({ checkpoint, include_tests }) => {
+      const found = findCheckpoint(root, checkpoint)
+      if ('failure' in found) return json(found.failure)
+      const loaded = requireProject(root)
+      if ('failure' in loaded) return json(loaded.failure)
+      const ref = `${found.line}:${found.checkpoint.id}`
+      const markdown = auditMarkdown(loaded.project, {
+        zones: { ids: zonesOf(found.checkpoint), label: `чекпоинт ${ref}` },
         includeTests: include_tests ?? false,
         code: true,
       })
