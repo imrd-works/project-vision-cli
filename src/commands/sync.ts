@@ -14,6 +14,7 @@ import {
 import { todoFor } from '../core/timeline.js'
 import { loadCredential } from '../workspace/credentials.js'
 import { authorEmail } from '../workspace/git.js'
+import { writeAllowedSigners } from '../workspace/identity.js'
 import { loadConfig } from '../workspace/project.js'
 import { ServerClient, ServerError } from '../workspace/server-client.js'
 import { readCache, type SyncCache, writeCache } from '../workspace/sync-cache.js'
@@ -82,6 +83,7 @@ export async function sync(
     const since = cache.bundle && { revision: cache.bundle.revision, day: cache.bundle.day }
     const bundle = await client.pull(target.project, since)
     if (bundle.changed) cache.bundle = bundle as ChangedBundle
+    keepSigners(root, cache.bundle)
     cache.syncedAt = new Date().toISOString()
     writeCache(root, cache)
     return result(EXIT.ok, describeSync(cache, bundle.changed, pushed), {
@@ -100,6 +102,11 @@ export async function sync(
       waiting: cache.outbox.length,
     })
   }
+}
+
+/** The team's keys, for git to verify signatures with (`git log --show-signature`, the hooks). */
+function keepSigners(root: string, bundle: ChangedBundle | undefined): void {
+  if (bundle?.signers) writeAllowedSigners(root, bundle.signers.allowedSigners)
 }
 
 /** `beacon note <line:checkpoint> <text>` (or `--delete`): queued, then sent if the server is up. */
@@ -170,13 +177,13 @@ function cachedTimeline(cache: SyncCache): TimelineResult | undefined {
   return parsed.success ? (cache.bundle?.timeline as TimelineResult) : undefined
 }
 
-function notSynced(): CommandResult {
+export function notSynced(): CommandResult {
   return result(EXIT.failed, ['✖ Данных сервера ещё нет — выполните beacon sync'], {
     error: 'not-synced',
   })
 }
 
-function header(cache: SyncCache): string {
+export function header(cache: SyncCache): string {
   const bundle = cache.bundle
   const when = cache.syncedAt?.slice(0, 16).replace('T', ' ') ?? '—'
   return `Сервер ${cache.server} · «${bundle?.project?.name ?? '?'}» · данные на ${when} (ревизия ${String(bundle?.revision ?? 0)})`
@@ -192,7 +199,7 @@ function describeSync(
   const title = `«${projectName(bundle)}», ревизия ${String(bundle?.revision ?? 0)}`
   return [
     changed ? `✓ Синхронизировано: ${title}` : `✓ Без изменений: ${title}`,
-    `  Линии: ${lineNames(bundle).join(', ') || '—'} · заметок: ${String(countNotes(bundle))} · конфликтов: ${String(conflicts.length)}`,
+    `  Линии: ${lineNames(bundle).join(', ') || '—'} · людей: ${String(countPeople(bundle))} · заметок: ${String(countNotes(bundle))} · конфликтов: ${String(conflicts.length)}`,
     ...(pushed ? describePushed(pushed) : []),
     ...conflicts.map((c) => `  ⚠ конфликт ${c.kind} ${c.key}: решите в дашборде`),
   ]
@@ -229,6 +236,10 @@ function lineNames(bundle: ChangedBundle | undefined): string[] {
     .object({ timeline: z.object({ lines: z.array(z.object({ line: z.string() })) }) })
     .safeParse(bundle?.timeline)
   return parsed.success ? parsed.data.timeline.lines.map((line) => line.line) : []
+}
+
+function countPeople(bundle: ChangedBundle | undefined): number {
+  return bundle?.people?.length ?? 0
 }
 
 function countNotes(bundle: ChangedBundle | undefined): number {

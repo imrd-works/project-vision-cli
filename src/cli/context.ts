@@ -48,6 +48,7 @@ export interface Values {
   project?: string
   browser?: boolean
   delete?: boolean
+  key?: string
 }
 
 export interface Context {
