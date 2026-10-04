@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildHistory, parseCommitLog } from './history.js'
+import { authorActivity, buildHistory, parseCommitLog } from './history.js'
 import { parseManifest } from './manifest.js'
 
 const manifestResult = parseManifest(
@@ -86,5 +86,21 @@ describe('buildHistory', () => {
       zones: [],
       dynamics: { days: [], gaps: [] },
     })
+  })
+})
+
+describe('authorActivity', () => {
+  const activity = authorActivity(parseCommitLog(LOG), manifest)
+
+  it('finds the last commit of an author in given zones or anywhere', () => {
+    expect(activity.last('bob@x.io', ['auth'])).toBe('2026-09-14')
+    expect(activity.last('ANN@x.io', ['users'])).toBe('2026-09-21')
+    expect(activity.last('ann@x.io', [])).toBe('2026-09-21')
+    expect(activity.last('ann@x.io', ['billing'])).toBeUndefined()
+  })
+
+  it('measures how long completed zones took', () => {
+    // auth: first commit 2026-09-07, completed 2026-09-14 → 5 working days.
+    expect(activity.durations).toEqual([5])
   })
 })

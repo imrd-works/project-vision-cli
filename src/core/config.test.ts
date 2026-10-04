@@ -23,6 +23,8 @@ dynamics:
       ok: true,
       config: {
         dynamics: { gapDays: 5 },
+        techDebt: { limitPerDeveloper: 2, extendDays: 7 },
+        stagnation: { days: 3 },
         validation: [
           {
             name: 'eslint',

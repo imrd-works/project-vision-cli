@@ -1,5 +1,7 @@
+import { dateRange, isWorkingDay, workingDaysBetween } from './calendar.js'
 import { type CommitBeacon, parseCommitBeacons } from './commit-message.js'
 import { type Manifest, resolveZoneId } from './manifest.js'
+import type { Activity } from './timeline.js'
 
 /**
  * Commit history by zones (who changed which part of the product, how often) and the
@@ -154,16 +156,34 @@ function findGaps(days: readonly DynamicsDay[], gapDays: number): Gap[] {
   return gaps
 }
 
-function dateRange(from: string, to: string): string[] {
-  const dates: string[] = []
-  const end = Date.parse(`${to}T00:00:00Z`)
-  for (let time = Date.parse(`${from}T00:00:00Z`); time <= end; time += 86_400_000) {
-    dates.push(new Date(time).toISOString().slice(0, 10))
+/** Who last worked in which zone, and how long zones take to complete — for stagnation. */
+export function authorActivity(commits: readonly CommitRecord[], manifest: Manifest): Activity {
+  const lastByZone = new Map<string, string>()
+  const lastAny = new Map<string, string>()
+  const firstByZone = new Map<string, string>()
+  const completedByZone = new Map<string, string>()
+  // git log is newest first: the first date seen is the latest, the last one the earliest.
+  for (const commit of commits) {
+    const day = commit.date.slice(0, 10)
+    const email = commit.author.email.toLowerCase()
+    for (const beacon of commit.beacons) {
+      const zone = resolveZoneId(manifest, beacon.id)
+      if (zone === undefined) continue
+      if (!lastByZone.has(`${email} ${zone}`)) lastByZone.set(`${email} ${zone}`, day)
+      if (!lastAny.has(email)) lastAny.set(email, day)
+      firstByZone.set(zone, day)
+      if (beacon.completed && !completedByZone.has(zone)) completedByZone.set(zone, day)
+    }
   }
-  return dates
-}
-
-function isWorkingDay(date: string): boolean {
-  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay()
-  return weekday !== 0 && weekday !== 6
+  return {
+    last: (email, zones) => {
+      const key = email.toLowerCase()
+      if (zones.length === 0) return lastAny.get(key)
+      const dates = zones.flatMap((zone) => lastByZone.get(`${key} ${zone}`) ?? [])
+      return dates.length > 0 ? dates.toSorted((a, b) => a.localeCompare(b)).at(-1) : undefined
+    },
+    durations: [...completedByZone].map(([zone, completed]) =>
+      workingDaysBetween(firstByZone.get(zone) ?? completed, completed)
+    ),
+  }
 }
