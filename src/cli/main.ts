@@ -11,6 +11,7 @@ process.emitWarning = (warning: string | Error, ...rest: unknown[]) => {
 }
 
 const { runCli } = await import('./run.js')
+const environment = await import('./environment.js')
 
 const controller = new AbortController()
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
@@ -30,4 +31,9 @@ process.exitCode = await runCli(process.argv.slice(2), {
   readStdin: () => (process.stdin.isTTY ? '' : readFileSync(0, 'utf8')),
   color: process.stdout.isTTY && !process.env['NO_COLOR'],
   signal: controller.signal,
+  configDir: environment.configDir(),
+  openUrl: (url) => {
+    environment.openUrl(url)
+  },
+  deviceName: environment.deviceName(),
 })

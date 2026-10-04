@@ -13,6 +13,11 @@ export interface Run {
 
 /** A throwaway git repository for end-to-end tests of the CLI. */
 export class TestRepo {
+  /** The user's config folder (credentials of `beacon login`), outside the repository. */
+  readonly home = mkdtempSync(path.join(tmpdir(), 'beacon-home-'))
+  /** URLs `beacon login` asked to open in a browser. */
+  readonly opened: string[] = []
+
   private constructor(readonly root: string) {}
 
   static create(): TestRepo {
@@ -66,6 +71,13 @@ export class TestRepo {
     return { code: capture.code, out: capture.output.out, err: capture.output.err }
   }
 
+  /** Runs a command that talks to a server (login, sync) and waits for it. */
+  async runAsync(argv: string[], options: { cwd?: string } = {}): Promise<Run> {
+    const capture = this.capture(argv, options)
+    const code = await capture.code
+    return { code, out: capture.output.out, err: capture.output.err }
+  }
+
   /** Starts a long-running command (watch, serve); `stop()` aborts it and returns its output. */
   start(argv: string[]): { output: { out: string; err: string }; stop: () => Promise<Run> } {
     const controller = new AbortController()
@@ -95,6 +107,9 @@ export class TestRepo {
       },
       readStdin: () => options.stdin ?? '',
       color: false,
+      configDir: this.home,
+      openUrl: (url) => this.opened.push(url),
+      deviceName: 'test-laptop',
       ...(options.signal ? { signal: options.signal } : {}),
     })
     return { code, output }
@@ -110,6 +125,7 @@ export class TestRepo {
 
   remove(): void {
     rmSync(this.root, { recursive: true, force: true })
+    rmSync(this.home, { recursive: true, force: true })
   }
 }
 
