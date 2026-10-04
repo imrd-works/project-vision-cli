@@ -7,6 +7,8 @@ import {
   zonesOf,
 } from '../commands/cross-audit.js'
 import type { CommandResult } from '../commands/result.js'
+import { syncTarget } from '../commands/sync.js'
+import { cachedAudit } from '../commands/team-audit.js'
 
 import { type Context, usage } from './context.js'
 
@@ -22,7 +24,7 @@ export function auditCommand(args: readonly string[], context: Context): Command
   if (!(SUBCOMMANDS as readonly string[]).includes(sub) || checkpoint === undefined) {
     return usage('beacon audit report|merge|status <чекпоинт>, beacon audit start <чекпоинт>')
   }
-  const target = { root: context.root, checkpoint }
+  const target = { root: context.root, checkpoint, round: serverRound(context, checkpoint) }
   if (sub === 'report') return auditReport(target, { model: context.values.model })
   return sub === 'merge' ? auditMerge(target) : auditStatus(target)
 }
@@ -42,4 +44,13 @@ function contextPack({ root, values }: Context): CommandResult {
     ...base,
     zones: { ids: zonesOf(found.checkpoint), label: `чекпоинт ${ref}` },
   })
+}
+
+/** The round the team server opened, as of the last `beacon sync`; none without a server. */
+function serverRound({ root, values }: Context, checkpoint: string): number | undefined {
+  const target = syncTarget(root, values)
+  if (!('server' in target)) return undefined
+  const found = findCheckpoint(root, checkpoint)
+  if ('failure' in found) return undefined
+  return cachedAudit(root, target, `${found.line}:${found.checkpoint.id}`)?.round ?? undefined
 }

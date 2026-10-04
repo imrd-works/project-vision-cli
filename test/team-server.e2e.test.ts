@@ -36,6 +36,7 @@ class FakeServer {
   revision = 1
   timeline: unknown = { missing: true }
   readonly received: Operation[] = []
+  audits: unknown[] = []
   private readonly entities: Record<string, unknown>[] = []
   private server: Server | undefined
 
@@ -72,6 +73,7 @@ class FakeServer {
     const authorized: Record<string, () => [number, unknown]> = {
       [`GET /projects/${PROJECT}/sync`]: () => this.pull(url.searchParams),
       [`POST /projects/${PROJECT}/sync/operations`]: () => this.push(body),
+      [`POST /projects/${PROJECT}/audits/backend%3Aauth/rounds`]: () => this.startRound(),
     }
     const handler = open[route] ?? (this.authorized(request) ? authorized[route] : undefined)
     const [status, payload] = handler?.() ?? [401, { message: 'Invalid or expired access token' }]
@@ -118,8 +120,35 @@ class FakeServer {
         timeline: this.timeline,
         entities: this.entities,
         conflicts: [],
+        audits: this.audits,
       },
     ]
+  }
+
+  private startRound(): [number, unknown] {
+    this.revision++
+    this.audits = [
+      {
+        checkpoint: 'backend:auth',
+        title: 'Auth API',
+        auditors: ['test@example.com'],
+        round: 1,
+        status: 'auditing',
+        closedWithoutAudit: false,
+        rounds: [
+          {
+            round: 1,
+            commit: 'abc1234def',
+            startedBy: 'ann@x.io',
+            startedAt: '2026-10-04T10:00:00.000Z',
+            reports: [],
+            summary: null,
+            signatures: [],
+          },
+        ],
+      },
+    ]
+    return [201, { round: 1, commit: 'abc1234def' }]
   }
 
   private push(body: unknown): [number, unknown] {
@@ -313,6 +342,42 @@ describe('team server', () => {
       expect((await repo.runAsync(['note', 'backend:auth', '--delete'])).out).toContain(
         'удаление заметки к backend:auth сохранена'
       )
+    })
+  })
+
+  describe('cross-audit with the team', () => {
+    it('opens a round on the server and signs it', async () => {
+      configure()
+      await repo.runAsync(['login', '--no-browser'])
+      expect((await repo.runAsync(['sign', 'auth', 'agree'])).err).toContain('не открыт')
+
+      const started = await repo.runAsync(['audit', 'start', 'auth'])
+      expect(started.out).toContain('✓ Раунд 1 кросс-аудита backend:auth открыт на коммите abc1234')
+      expect(repo.run(['checkpoints', '--team']).out).toContain(
+        '◎ кросс-аудит: раунд 1, подписей 0/1, отчётов 0'
+      )
+      expect(repo.run(['audit', 'report', 'auth']).out).toContain('round-1/test-example-com.md')
+
+      expect((await repo.runAsync(['sign', 'auth', 'maybe'])).code).toBe(2)
+      expect((await repo.runAsync(['sign', 'auth', 'object'])).err).toContain('--comment')
+      const signed = await repo.runAsync([
+        'sign',
+        'auth',
+        'accept-risk',
+        '--comment',
+        'Rate limit later',
+      ])
+      expect(signed.out).toContain('✓ Подпись под раундом 1 backend:auth: accept-risk')
+      expect(server.received).toMatchObject([
+        {
+          kind: 'signature',
+          key: 'backend:auth/1/ann@x.io',
+          data: { verdict: 'accept-risk', commit: 'abc1234def', comment: 'Rate limit later' },
+          baseVersion: 0,
+        },
+      ])
+      expect((await repo.runAsync(['audit', 'start'])).code).toBe(2)
+      expect((await repo.runAsync(['sign', 'auth'])).code).toBe(2)
     })
   })
 })

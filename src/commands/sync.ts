@@ -6,6 +6,7 @@ import type { TimelineResult } from '../core/snapshot.js'
 import {
   type ChangedBundle,
   CHECKPOINT_REF,
+  describeAudit,
   notesOf,
   type PushResult,
   versionOf,
@@ -141,8 +142,7 @@ export function serverCheckpoints(root: string, target: Target): CommandResult {
       { missing: true }
     )
   }
-  const notes = notesOf(cache.bundle.entities ?? [], cache.outbox)
-  const shown = describeTimeline(timeline, notes)
+  const shown = describeTimeline(timeline, teamExtras(cache))
   return { ...shown, text: [header(cache), shown.text].join('\n') }
 }
 
@@ -233,4 +233,17 @@ function lineNames(bundle: ChangedBundle | undefined): string[] {
 
 function countNotes(bundle: ChangedBundle | undefined): number {
   return (bundle?.entities ?? []).filter((e) => e.kind === 'note' && e.data !== null).length
+}
+
+/** Lines under each checkpoint: the team's note, then the state of its cross-audit. */
+function teamExtras(cache: SyncCache): Map<string, string[]> {
+  const extras = new Map<string, string[]>()
+  const add = (ref: string, line: string): void => {
+    extras.set(ref, [...(extras.get(ref) ?? []), line])
+  }
+  for (const [ref, note] of notesOf(cache.bundle?.entities ?? [], cache.outbox)) {
+    add(ref, `✎ ${note.text}${note.pending ? ' (не отправлена)' : ''}`)
+  }
+  for (const audit of cache.bundle?.audits ?? []) add(audit.checkpoint, describeAudit(audit))
+  return extras
 }
