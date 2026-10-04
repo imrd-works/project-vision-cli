@@ -1,13 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { AUDITS_DIR } from '../core/audit.js'
 import { CHECKPOINTS_PATH } from '../core/checkpoints.js'
 import { CONFIG_PATH } from '../core/config.js'
 import { parseCommitLog } from '../core/history.js'
 import { MANIFEST_PATH } from '../core/manifest.js'
 import type { RepositorySnapshot } from '../core/snapshot.js'
 
-import { commitLog, projectName } from './git.js'
+import { commitLog, listFiles, projectName } from './git.js'
 import { loadProject, scanProject } from './project.js'
 
 /**
@@ -30,7 +31,18 @@ export function collectSnapshot(root: string): RepositorySnapshot {
     },
     ...(load.kind === 'ok' ? { index: scanProject(load.project) } : {}),
     commits: parseCommitLog(commitLog(root)),
+    audits: auditFiles(root),
   }
+}
+
+/** The cross-audit files git sees, with their text. */
+export function auditFiles(root: string): { path: string; text: string }[] {
+  return listFiles(root)
+    .filter((file) => file.startsWith(`${AUDITS_DIR}/`) && file.endsWith('.md'))
+    .flatMap((file) => {
+      const text = readText(root, file)
+      return text === undefined ? [] : [{ path: file, text }]
+    })
 }
 
 function readText(root: string, file: string): string | undefined {

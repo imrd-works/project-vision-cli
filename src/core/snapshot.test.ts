@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import type { CommitRecord } from './history.js'
 import type { ProjectIndex } from './project-index.js'
-import { historyView, indexView, type RepositorySnapshot, timelineView } from './snapshot.js'
+import {
+  auditView,
+  historyView,
+  indexView,
+  type RepositorySnapshot,
+  timelineView,
+} from './snapshot.js'
 
 const ZONES = 'version: 1\nzones:\n  auth.api:\n    title: Auth API\n    paths: [src/auth/**]\n'
 
@@ -161,5 +167,27 @@ describe('timelineView', () => {
     expect(timelineView([snapshot({ files: { zones: ZONES } })], '2026-10-05')).toEqual({
       missing: true,
     })
+  })
+})
+
+describe('auditView', () => {
+  it('gives the audits of the line, by checkpoint', () => {
+    const audited = {
+      ...backend,
+      audits: [
+        {
+          path: '.beacons/audits/auth-api/round-1/bob-x-io.md',
+          text: '---\nauthor: bob@x.io\n---\n### [low] A\n',
+        },
+      ],
+    }
+    expect(auditView(audited)).toMatchObject({
+      line: 'backend',
+      audits: [
+        { checkpoint: 'auth-api', rounds: [{ round: 1, reports: [{ author: 'bob@x.io' }] }] },
+      ],
+    })
+    // Without a plan there is no line, and audit files mean nothing.
+    expect(auditView({ ...audited, files: { zones: ZONES } })).toEqual({ audits: [] })
   })
 })
