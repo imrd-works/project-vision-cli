@@ -278,10 +278,12 @@ const COMMANDS: Record<string, Handler> = {
       : mark(context.root, fromCwd(context, file), zone),
   hook: ([name, ...args], { root, io }) => {
     if (!isHookName(name)) return usage(`hook: ожидается одно из ${HOOK_NAMES.join(', ')}`)
-    if (name === 'pre-push') return hook(root, name, args, io.readStdin())
+    const { configDir } = io
+    if (name === 'pre-push') return hook(root, name, args, { stdin: io.readStdin(), configDir })
     // Message hooks get the message file path relative to where git started them.
     const [file, ...rest] = args
-    return hook(root, name, file === undefined ? [] : [path.resolve(io.cwd, file), ...rest], '')
+    const resolved = file === undefined ? [] : [path.resolve(io.cwd, file), ...rest]
+    return hook(root, name, resolved, { stdin: '', configDir })
   },
 }
 

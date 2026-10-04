@@ -4,12 +4,12 @@ import path from 'node:path'
 
 import type { SigningSetup, TeamPeople } from '../core/identity.js'
 
-import { configValue, git, gitPath } from './git.js'
+import { configValue, git, gitPath, tryGit } from './git.js'
 import { readCache } from './sync-cache.js'
 
 /**
- * The machine's side of signing: how git signs commits here and the team's allowed signers kept
- * next to the sync cache.
+ * The machine's side of identity checks: how git signs commits here, the team's allowed signers
+ * kept next to the sync cache, and git's verdict on the signatures of made commits.
  */
 
 const ALLOWED_SIGNERS_GIT_PATH = 'beacon/allowed_signers'
@@ -80,6 +80,33 @@ export function configureSigning(root: string, keyFile: string): void {
   git(root, ['config', 'user.signingkey', signingKey])
   git(root, ['config', 'commit.gpgsign', 'true'])
   git(root, ['config', 'gpg.ssh.allowedSignersFile', allowedSignersPath(root)])
+}
+
+/** Git's verdict on each commit's signature against the allowed signers (`%G?`, `%GS`). */
+export function commitSignatures(
+  root: string,
+  shas: readonly string[],
+  allowedSigners: string
+): { sha: string; email: string; status: string; signer: string }[] {
+  if (shas.length === 0) return []
+  const file = writeAllowedSigners(root, allowedSigners)
+  const output =
+    tryGit(root, [
+      '-c',
+      `gpg.ssh.allowedSignersFile=${file}`,
+      'log',
+      '--no-walk=unsorted',
+      '--format=%H%x1f%ae%x1f%G?%x1f%GS%x1e',
+      ...shas,
+    ]) ?? ''
+  return output
+    .split('\u{1E}')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [sha = '', email = '', status = 'N', signer = ''] = entry.split('\u{1F}', 4)
+      return { sha, email: email.toLowerCase(), status, signer }
+    })
 }
 
 function expandHome(file: string): string {

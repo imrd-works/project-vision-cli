@@ -9,6 +9,7 @@ import {
   teamPeople,
   writeAllowedSigners,
 } from '../workspace/identity.js'
+import { loadConfig } from '../workspace/project.js'
 import { readCache, type SyncCache } from '../workspace/sync-cache.js'
 
 import { type CommandResult, EXIT, result } from './result.js'
@@ -35,6 +36,7 @@ export function whoami(root: string, target: Target, configDir: string): Command
     signingLine(signing, team, me),
     zonesLine(mine, me),
     ...contactLines(me),
+    `• Проверка автора в хуках: ${identityCheck(root)}`,
   ]
   return result(EXIT.ok, lines, {
     user: credential.user,
@@ -179,6 +181,17 @@ function contactLines(me: Person | undefined): string[] {
     return ['⚠ Контакты не заполнены — команде не связаться с вами (профиль в дашборде)']
   }
   return [`• Контакты: ${filled.join(' · ')}`]
+}
+
+const CHECK_NAMES = { signature: 'подпись', email: 'почта', off: 'выключена' } as const
+
+function identityCheck(root: string): string {
+  const config = loadConfig(root)
+  if (!config.ok) return '—'
+  const policy = config.config.identity
+  if (policy.check === 'off') return CHECK_NAMES.off
+  const stale = policy.whenStale === 'hold' ? 'блокируют коммит' : 'только предупреждают'
+  return `${CHECK_NAMES[policy.check]}; данные старше ${String(policy.staleDays)} дн. ${stale}`
 }
 
 function notLoggedIn(target: Target): CommandResult {

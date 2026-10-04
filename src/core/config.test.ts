@@ -18,6 +18,8 @@ validation:
     rules: [fsd/*]
 dynamics:
   gapDays: 5
+identity:
+  check: signature
 `)
     expect(result).toEqual({
       ok: true,
@@ -25,6 +27,7 @@ dynamics:
         dynamics: { gapDays: 5 },
         techDebt: { limitPerDeveloper: 2, extendDays: 7 },
         stagnation: { days: 3 },
+        identity: { check: 'signature', staleDays: 7, whenStale: 'allow' },
         validation: [
           {
             name: 'eslint',
@@ -40,6 +43,13 @@ dynamics:
           },
         ],
       },
+    })
+  })
+
+  it('rejects an unknown identity check', () => {
+    expect(parseConfig('version: 1\nidentity:\n  check: login\n')).toMatchObject({
+      ok: false,
+      problems: [{ message: expect.stringContaining('identity.check') as string }],
     })
   })
 

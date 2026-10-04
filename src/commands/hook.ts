@@ -2,12 +2,30 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
 import { type CommitCheck, checkCommit, touchedZones } from '../core/commit-check.js'
 import { appendBeacons, parseCommitBeacons } from '../core/commit-message.js'
+import type { IdentityPolicy } from '../core/config.js'
+import {
+  checkAuthor,
+  commitVerdict,
+  type IdentityCheck,
+  type TeamPeople,
+  VERDICT_TEXT,
+  verdictPasses,
+} from '../core/identity.js'
 import { resolveZoneId } from '../core/manifest.js'
 import { hasErrors } from '../core/problem.js'
+import { loadCredential } from '../workspace/credentials.js'
 import { debtLimitViolation } from '../workspace/debt-limit.js'
-import { commitMessage, commitSubject, gitPath, listCommits, tryGit } from '../workspace/git.js'
+import {
+  authorEmail,
+  commitMessage,
+  commitSubject,
+  gitPath,
+  listCommits,
+  tryGit,
+} from '../workspace/git.js'
 import type { HookName } from '../workspace/hooks.js'
-import { commitChanges, loadProject, stagedChanges } from '../workspace/project.js'
+import { commitSignatures, signingSetup, teamPeople } from '../workspace/identity.js'
+import { commitChanges, loadConfig, loadProject, stagedChanges } from '../workspace/project.js'
 
 import { type CommandResult, EXIT, formatProblem, result } from './result.js'
 
@@ -16,17 +34,19 @@ export function hook(
   root: string,
   name: HookName,
   args: readonly string[],
-  stdin: string
+  options: { stdin: string; configDir: string }
 ): CommandResult {
   switch (name) {
     case 'prepare-commit-msg': {
       return prepareCommitMessage(root, args)
     }
     case 'commit-msg': {
-      return commitMsg(root, args)
+      const checked = commitMsg(root, args)
+      return checked.code === EXIT.ok ? withAuthorCheck(checked, root, options.configDir) : checked
     }
     case 'pre-push': {
-      return prePush(root, args, stdin)
+      const checked = prePush(root, args, options.stdin)
+      return checked.code === EXIT.ok ? verifyPushedAuthors(root, args, options.stdin) : checked
     }
   }
 }
@@ -105,6 +125,85 @@ function prePush(
     EXIT.failed,
     ['beacon: в пушимых коммитах не хватает маяков', ...lines, 'Исправьте: git rebase -i и reword'],
     { ok: false, failures }
+  )
+}
+
+/** The team server of this repository, its people as of the last sync and the check to apply. */
+function identityContext(
+  root: string
+): { policy: IdentityPolicy; server: string; team: TeamPeople | undefined } | undefined {
+  const config = loadConfig(root)
+  if (!config.ok || !config.config.server || config.config.identity.check === 'off')
+    return undefined
+  const { url: server, project } = config.config.server
+  return { policy: config.config.identity, server, team: teamPeople(root, { server, project }) }
+}
+
+/** Who makes the commit: the author belongs to the project, and signs with their own key. */
+function withAuthorCheck(checked: CommandResult, root: string, configDir: string): CommandResult {
+  const context = identityContext(root)
+  if (!context) return checked
+  const check: IdentityCheck = checkAuthor({
+    ...context,
+    author: authorEmail(root),
+    signing: signingSetup(root),
+    loggedIn: loadCredential(configDir, context.server)?.user.email,
+    now: new Date(),
+  })
+  const warnings = check.warnings.map((warning) => `⚠ beacon: ${warning}`)
+  if (check.errors.length === 0) {
+    return result(EXIT.ok, warnings, { ...(checked.json as object), identity: check })
+  }
+  return result(
+    EXIT.failed,
+    [
+      '✖ beacon: коммит отклонён — автор не подтверждён',
+      ...check.errors.map((e) => `  ${e}`),
+      ...warnings,
+    ],
+    { ok: false, identity: check }
+  )
+}
+
+/** The signatures of pushed commits against the team's keys: made commits, `--no-verify` too. */
+function verifyPushedAuthors(
+  root: string,
+  [remote = 'origin']: readonly string[],
+  stdin: string
+): CommandResult {
+  const context = identityContext(root)
+  if (!context) return OK
+  const { policy, team } = context
+  if (!team) {
+    return policy.whenStale === 'hold'
+      ? result(EXIT.failed, ['✖ beacon: нет данных о людях проекта — выполните beacon sync'], {
+          ok: false,
+          error: 'not-synced',
+        })
+      : OK
+  }
+  const commits = commitSignatures(
+    root,
+    pushedCommits(root, remote, stdin),
+    team.signers.allowedSigners
+  )
+  const failures = commits
+    .map((commit) => ({ ...commit, verdict: commitVerdict(team.people, commit) }))
+    .filter((commit) => !verdictPasses(policy, commit.verdict))
+  if (failures.length === 0) return OK
+  return result(
+    EXIT.failed,
+    [
+      'beacon: авторство пушимых коммитов не подтверждено',
+      ...failures.map(
+        (commit) =>
+          `✖ ${commit.sha.slice(0, 7)} ${commitSubject(root, commit.sha)} — ${commit.email}: ${VERDICT_TEXT[commit.verdict]}`
+      ),
+      policy.check === 'signature'
+        ? 'Подпишите коммиты своим ключом: beacon signing setup, затем git rebase --exec "git commit --amend --no-edit -S"'
+        : 'Коммиты должны быть от почты участника проекта (git config user.email)',
+    ],
+    { ok: false, authors: failures }
   )
 }
 
