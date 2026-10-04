@@ -92,6 +92,45 @@ export const auditStateSchema = z.object({
 
 export type AuditState = z.infer<typeof auditStateSchema>
 
+/** A person of the project: the account's email and every email their git accounts verified. */
+export const personSchema = z.object({
+  userId: z.string(),
+  name: z.string(),
+  role: z.string(),
+  emails: z.array(z.string()),
+  contacts: z.object({
+    telegram: z.string().nullable(),
+    phone: z.string().nullable(),
+    email: z.string().nullable(),
+  }),
+  identities: z.array(
+    z.object({ provider: z.string(), login: z.string(), signingKeys: z.number() })
+  ),
+})
+
+/** Who owns a zone (`repository:zone`) and who may change it alongside. */
+export const zoneOwnerSchema = z.object({
+  ref: z.string(),
+  repository: z.string(),
+  zone: z.string(),
+  title: z.string(),
+  owner: z.string().nullable(),
+  proxies: z.array(z.string()),
+  version: z.number(),
+})
+
+/** SSH signing keys of linked git accounts; `allowedSigners` is git's allowed signers file. */
+export const signersSchema = z.object({
+  signers: z.array(
+    z.object({ name: z.string(), emails: z.array(z.string()), keys: z.array(z.string()) })
+  ),
+  allowedSigners: z.string(),
+})
+
+export type Person = z.infer<typeof personSchema>
+export type ZoneOwner = z.infer<typeof zoneOwnerSchema>
+export type Signers = z.infer<typeof signersSchema>
+
 export const roundStartedSchema = z.object({ round: z.number(), commit: z.string() })
 
 export const bundleSchema = z.object({
@@ -116,6 +155,9 @@ export const bundleSchema = z.object({
   entities: z.array(entitySchema).optional(),
   conflicts: z.array(conflictSchema).optional(),
   audits: z.array(auditStateSchema).optional(),
+  people: z.array(personSchema).optional(),
+  owners: z.array(zoneOwnerSchema).optional(),
+  signers: signersSchema.optional(),
 })
 
 export const pushResultSchema = z.object({

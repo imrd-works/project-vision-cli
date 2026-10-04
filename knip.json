@@ -3,6 +3,7 @@
   "entry": ["src/cli/main.ts", "src/lib/index.ts", "scripts/*.mjs"],
   "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs"],
   "ignoreDependencies": ["@secretlint/secretlint-rule-preset-recommend"],
+  "ignoreBinaries": ["ssh-keygen"],
   "ignoreExportsUsedInFile": true,
   "rules": {
     "types": "error",

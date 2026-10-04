@@ -1,4 +1,5 @@
 import { login, logout } from '../commands/login.js'
+import { owners, setupSigning, whoami } from '../commands/people.js'
 import type { CommandResult } from '../commands/result.js'
 import {
   note,
@@ -40,6 +41,25 @@ function withTarget(
 }
 
 export const TEAM_COMMANDS: Record<string, (context: Context) => Promise<number>> = {
+  whoami: (context) =>
+    withTarget(context, (target) => whoami(context.root, target, context.io.configDir)),
+  owners: (context) =>
+    withTarget(context, (target) => owners(context.root, target, context.args[0])),
+  signing: (context) => {
+    if (context.args[0] !== 'setup') {
+      return printed(context, usage('beacon signing setup [--key <файл .pub>]'))
+    }
+    // Signing works without a team server too; with one, the key is checked against the team's.
+    const target = syncTarget(context.root, context.values)
+    return printed(
+      context,
+      setupSigning(context.root, 'server' in target ? target : undefined, {
+        key: context.values.key,
+        cwd: context.io.cwd,
+        configDir: context.io.configDir,
+      })
+    )
+  },
   login: (context) => {
     const server = serverOf(context)
     if (typeof server !== 'string') return printed(context, server)

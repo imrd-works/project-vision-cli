@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -37,6 +38,9 @@ class FakeServer {
   timeline: unknown = { missing: true }
   readonly received: Operation[] = []
   audits: unknown[] = []
+  people: unknown[] = []
+  owners: unknown[] = []
+  signers: unknown = { signers: [], allowedSigners: '' }
   private readonly entities: Record<string, unknown>[] = []
   private server: Server | undefined
 
@@ -121,6 +125,9 @@ class FakeServer {
         entities: this.entities,
         conflicts: [],
         audits: this.audits,
+        people: this.people,
+        owners: this.owners,
+        signers: this.signers,
       },
     ]
   }
@@ -269,7 +276,7 @@ describe('team server', () => {
 
       const first = await repo.runAsync(['sync'])
       expect(first.out).toContain('✓ Синхронизировано: «Vision», ревизия 1')
-      expect(first.out).toContain('Линии: backend · заметок: 0 · конфликтов: 0')
+      expect(first.out).toContain('Линии: backend · людей: 0 · заметок: 0 · конфликтов: 0')
       expect((await repo.runAsync(['sync'])).out).toContain('✓ Без изменений')
 
       const team = repo.run(['checkpoints', '--team'])
@@ -378,6 +385,115 @@ describe('team server', () => {
       ])
       expect((await repo.runAsync(['audit', 'start'])).code).toBe(2)
       expect((await repo.runAsync(['sign', 'auth'])).code).toBe(2)
+    })
+  })
+
+  describe('people and commit authors', () => {
+    let keys: string
+    const keyOf = (name: string): string => readFileSync(path.join(keys, `${name}.pub`), 'utf8')
+
+    function person(name: string, emails: string[], extra: object = {}): object {
+      return {
+        userId: name,
+        name,
+        role: 'member',
+        emails,
+        contacts: { telegram: null, phone: null, email: null },
+        identities: [{ provider: 'github', login: name.split(' ', 1)[0], signingKeys: 1 }],
+        ...extra,
+      }
+    }
+
+    beforeEach(async () => {
+      keys = mkdtempSync(path.join(tmpdir(), 'beacon-keys-'))
+      for (const name of ['ann', 'bob']) {
+        execFileSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', path.join(keys, name)])
+      }
+      const ann = ['ann@x.io', 'test@example.com']
+      server.people = [
+        person('Ann Lee', ann, { contacts: { telegram: '@ann_lee', phone: null, email: null } }),
+        person('Bob Kim', ['bob@x.io']),
+      ]
+      server.owners = [
+        {
+          ref: 'backend:auth.api',
+          repository: 'backend',
+          zone: 'auth.api',
+          title: 'Auth API',
+          owner: 'ann@x.io',
+          proxies: ['bob@x.io'],
+          version: 1,
+        },
+        {
+          ref: 'backend:billing',
+          repository: 'backend',
+          zone: 'billing',
+          title: 'Billing',
+          owner: null,
+          proxies: [],
+          version: 0,
+        },
+      ]
+      server.signers = {
+        signers: [
+          { name: 'Ann Lee', emails: ann, keys: [keyOf('ann').trim()] },
+          { name: 'Bob Kim', emails: ['bob@x.io'], keys: [keyOf('bob').trim()] },
+        ],
+        allowedSigners: [
+          `${ann.join(',')} namespaces="git" ${keyOf('ann').trim()}`,
+          `bob@x.io namespaces="git" ${keyOf('bob').trim()}`,
+          '',
+        ].join('\n'),
+      }
+      configure()
+      await repo.runAsync(['login', '--no-browser'])
+    })
+
+    afterEach(() => {
+      rmSync(keys, { recursive: true, force: true })
+    })
+
+    it('tells who I am and who owns the zones', async () => {
+      expect((await repo.runAsync(['whoami'])).err).toContain('выполните beacon sync')
+      expect((await repo.runAsync(['sync'])).out).toContain('людей: 2')
+
+      const me = await repo.runAsync(['whoami'])
+      expect(me.code).toBe(0)
+      expect(me.out).toContain('Вы: Ann Lee <ann@x.io>, владелец проекта')
+      expect(me.out).toContain('✓ Коммиты здесь — от вашего имени: test@example.com')
+      expect(me.out).toContain('✓ github: Ann, ключей подписи: 1')
+      expect(me.out).toContain('⚠ Коммиты не подписываются — beacon signing setup')
+      expect(me.out).toContain('• Зоны: backend:auth.api')
+      expect(me.out).toContain('• Контакты: telegram @ann_lee')
+
+      const all = await repo.runAsync(['owners'])
+      expect(all.out).toContain(
+        'backend:auth.api  Ann Lee <ann@x.io>; доверенные: Bob Kim <bob@x.io>'
+      )
+      expect(all.out).toContain('backend:billing   не назначен')
+      expect((await repo.runAsync(['owners', 'billing'])).out).not.toContain('auth.api')
+      expect((await repo.runAsync(['owners', 'nope'])).code).toBe(1)
+    })
+
+    it('signs commits with my own key', async () => {
+      await repo.runAsync(['sync'])
+      const bob = await repo.runAsync(['signing', 'setup', '--key', path.join(keys, 'bob.pub')])
+      expect(bob.out).toContain('⚠ Это ключ Bob Kim, а не ваш')
+
+      const ann = await repo.runAsync(['signing', 'setup', '--key', path.join(keys, 'ann.pub')])
+      expect(ann.out).toContain('✓ Ключ привязан к вашему git-аккаунту')
+      expect(repo.git('config', 'user.signingkey').trim()).toBe(path.join(keys, 'ann'))
+      expect(repo.git('config', 'commit.gpgsign').trim()).toBe('true')
+      expect((await repo.runAsync(['whoami'])).out).toContain(
+        '✓ Коммиты подписываются ключом вашего git-аккаунта'
+      )
+      repo.write('README.md', 'signed\n')
+      repo.git('add', '-A')
+      repo.git('commit', '-q', '--no-verify', '-m', 'docs: signed')
+      expect(repo.git('log', '--show-signature', '-1')).toContain(
+        'Good "git" signature for ann@x.io'
+      )
+      expect((await repo.runAsync(['signing', 'oops'])).code).toBe(2)
     })
   })
 })

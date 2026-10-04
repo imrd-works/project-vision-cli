@@ -67,6 +67,9 @@ const HELP = `beacon — зоны и маяки Project Vision
                                 отправить изменения, сделанные офлайн, и забрать состояние проекта
   note <линия:чекпоинт> <текст> | --delete
                                 заметка к чекпоинту для всей команды
+  whoami                        кто я в проекте: аккаунт, автор коммитов, подпись, мои зоны
+  owners [<зона>]               владельцы зон и доверенные лица (по данным сервера)
+  signing setup [--key <файл>]  подписывать коммиты SSH-ключом своего git-аккаунта
   watch                         держать индекс актуальным при изменении файлов
   serve [--port 4317] [--host 127.0.0.1] [--origin <url>]
                                 локальный API для дашборда с живыми обновлениями
@@ -110,6 +113,7 @@ const OPTIONS = {
   project: { type: 'string' },
   browser: { type: 'boolean', default: true },
   delete: { type: 'boolean' },
+  key: { type: 'string' },
 } as const
 
 const PARSE_CONFIG = {
