@@ -34,6 +34,7 @@ const index: ProjectIndex = {
   files: [],
   coverage: { sourceFiles: 0, zonedSourceFiles: 0 },
   unzonedDirs: [],
+  tree: { name: '', path: '', files: 0, zonedFiles: 0, zones: [], children: [] },
   problems: [],
 }
 
