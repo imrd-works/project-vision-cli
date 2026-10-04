@@ -33,6 +33,8 @@ export interface BeaconConfig {
   }
   /** Working days without commits in one's zones before a developer counts as stuck. */
   stagnation: { days: number }
+  /** The team server and the project this repository is a line of (`beacon sync`). */
+  server?: { url: string; project: string }
 }
 
 /** The project's own tools in their JSON mode. `--no`: never download a missing tool. */
@@ -76,6 +78,12 @@ const configSchema = z.strictObject({
   stagnation: z
     .strictObject({ days: z.number().int().min(1).max(60).default(3) })
     .default({ days: 3 }),
+  server: z
+    .strictObject({
+      url: z.url({ protocol: /^https?$/ }).transform((url) => url.replace(/\/+$/, '')),
+      project: z.uuid(),
+    })
+    .optional(),
 })
 
 export type ConfigResult = { ok: true; config: BeaconConfig } | { ok: false; problems: Problem[] }
@@ -102,6 +110,7 @@ export function parseConfig(text: string | undefined): ConfigResult {
       dynamics: parsed.data.dynamics,
       techDebt: parsed.data.techDebt,
       stagnation: parsed.data.stagnation,
+      ...(parsed.data.server === undefined ? {} : { server: parsed.data.server }),
       validation: parsed.data.validation.map((entry) => ({
         name: entry.name ?? entry.tool,
         tool: entry.tool,

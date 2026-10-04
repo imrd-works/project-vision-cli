@@ -1,0 +1,129 @@
+import { z } from 'zod'
+
+/**
+ * The contract of the team server as `beacon login` and `beacon sync` see it, and the offline
+ * model: what the client keeps (the last bundle) and what waits to be sent (the outbox).
+ */
+
+const person = z.object({ name: z.string(), email: z.string() }).nullable()
+
+export const loginStartedSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  pollSecret: z.string(),
+  verificationUrl: z.string(),
+  expiresAt: z.string(),
+})
+
+export const loginClaimSchema = z.object({
+  status: z.enum(['pending', 'approved', 'expired']),
+  token: z.string().optional(),
+  user: z.object({ email: z.string(), name: z.string() }).optional(),
+})
+
+export const entitySchema = z.object({
+  kind: z.string(),
+  key: z.string(),
+  data: z.unknown(),
+  version: z.number(),
+  updatedAt: z.string(),
+  updatedBy: person,
+})
+
+export const conflictSchema = z.object({
+  id: z.string(),
+  kind: z.string(),
+  key: z.string(),
+  baseVersion: z.number(),
+  mine: z.unknown(),
+  theirs: z.unknown(),
+  createdAt: z.string(),
+  createdBy: person,
+})
+
+export const bundleSchema = z.object({
+  revision: z.number(),
+  day: z.string(),
+  changed: z.boolean(),
+  project: z.object({ id: z.string(), name: z.string(), role: z.string() }).optional(),
+  repositories: z
+    .array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        defaultBranch: z.string().nullable(),
+        status: z.string(),
+        syncedAt: z.string().nullable(),
+        branches: z.number(),
+      })
+    )
+    .optional(),
+  /** A TimelineResult of the server, computed for `day`. */
+  timeline: z.unknown().optional(),
+  entities: z.array(entitySchema).optional(),
+  conflicts: z.array(conflictSchema).optional(),
+})
+
+export const pushResultSchema = z.object({
+  revision: z.number(),
+  results: z.array(
+    z.object({
+      id: z.string(),
+      status: z.enum(['applied', 'stale', 'conflict', 'rejected']),
+      version: z.number().optional(),
+      conflictId: z.string().optional(),
+      reason: z.string().optional(),
+    })
+  ),
+})
+
+export type LoginStarted = z.infer<typeof loginStartedSchema>
+export type LoginClaim = z.infer<typeof loginClaimSchema>
+export type Bundle = z.infer<typeof bundleSchema>
+export type SyncEntity = z.infer<typeof entitySchema>
+export type PushResult = z.infer<typeof pushResultSchema>
+
+/** A change made offline: applied by the server once, by its `id`. */
+export interface Operation {
+  id: string
+  kind: string
+  key: string
+  data: unknown
+  baseVersion: number
+  at: string
+}
+
+/** The full state as of the last successful pull. */
+export type ChangedBundle = Bundle & { changed: true }
+
+export const CHECKPOINT_REF = /^[a-z0-9][\w.-]*:[a-z0-9][\w.-]*$/
+
+/** Notes to checkpoints as the team will see them: the server's, then changes not sent yet. */
+export function notesOf(
+  entities: readonly SyncEntity[],
+  outbox: readonly Operation[]
+): Map<string, { text: string; pending: boolean }> {
+  const notes = new Map<string, { text: string; pending: boolean }>()
+  for (const entity of entities) {
+    const text = noteText(entity.data)
+    if (entity.kind === 'note' && text !== undefined)
+      notes.set(entity.key, { text, pending: false })
+  }
+  for (const operation of outbox) {
+    if (operation.kind !== 'note') continue
+    const text = noteText(operation.data)
+    if (text === undefined) notes.delete(operation.key)
+    else notes.set(operation.key, { text, pending: true })
+  }
+  return notes
+}
+
+/** The version of an entity the client saw: what an offline change is made against. */
+export function versionOf(entities: readonly SyncEntity[], kind: string, key: string): number {
+  return entities.find((entity) => entity.kind === kind && entity.key === key)?.version ?? 0
+}
+
+function noteText(data: unknown): string | undefined {
+  const parsed = z.object({ text: z.string() }).safeParse(data)
+  return parsed.success ? parsed.data.text : undefined
+}

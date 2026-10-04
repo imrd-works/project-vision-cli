@@ -43,7 +43,23 @@ dynamics:
     })
   })
 
+  it('reads the team server and its project', () => {
+    const result = parseConfig(
+      'version: 1\nserver:\n  url: https://vision.example.com/\n  project: 54cc4d32-7588-4252-a186-832699730b5a\n'
+    )
+    expect(result).toMatchObject({
+      ok: true,
+      config: {
+        server: {
+          url: 'https://vision.example.com',
+          project: '54cc4d32-7588-4252-a186-832699730b5a',
+        },
+      },
+    })
+  })
+
   it.each([
+    ['bad server', 'version: 1\nserver:\n  url: ftp://x\n  project: nope', 'server.url'],
     ['YAML syntax', 'version: 1\nvalidation: [', 'YAML'],
     ['unknown tool', 'version: 1\nvalidation:\n  - tool: tslint', 'validation.0.tool'],
     ['bad gap', 'version: 1\ndynamics:\n  gapDays: 0', 'dynamics.gapDays'],

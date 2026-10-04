@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { parseArgs, styleText } from 'node:util'
+import { parseArgs } from 'node:util'
 
 import { audit } from '../commands/audit.js'
 import { check } from '../commands/check.js'
@@ -11,8 +11,8 @@ import { init } from '../commands/init.js'
 import { list } from '../commands/list.js'
 import { mark } from '../commands/mark.js'
 import { mcpCommand } from '../commands/mcp.js'
-import { type CommandResult, EXIT, result } from '../commands/result.js'
-import { packageVersion, type RunContext } from '../commands/running.js'
+import { type CommandResult, EXIT } from '../commands/result.js'
+import { packageVersion } from '../commands/running.js'
 import { DEFAULT_ORIGINS, DEFAULT_PORT, serveCommand } from '../commands/serve.js'
 import { status } from '../commands/status.js'
 import { todo } from '../commands/todo.js'
@@ -23,15 +23,10 @@ import { which } from '../commands/which.js'
 import { findRepoRoot } from '../workspace/git.js'
 import { HOOK_NAMES, type HookName } from '../workspace/hooks.js'
 
-export interface Io {
-  cwd: string
-  out: (text: string) => void
-  err: (text: string) => void
-  readStdin: () => string
-  color: boolean
-  /** Stops long-running commands (watch, serve, mcp). */
-  signal?: AbortSignal
-}
+import { type Context, type Io, print, runContext, usage } from './context.js'
+import { TEAM_COMMANDS, teamView } from './team.js'
+
+export type { Io } from './context.js'
 
 const HELP = `beacon — зоны и маяки Project Vision
 
@@ -50,13 +45,22 @@ const HELP = `beacon — зоны и маяки Project Vision
   tree [--depth <n>]            дерево архитектуры: папки, число файлов, зоны
   history                       коммиты по зонам, их авторы и провалы в разработке
   validate                      проверить архитектуру инструментами проекта (.beacons/config.yml)
-  checkpoints [--with <репо>]   линии чекпоинтов: пункты, стоперы, техдолг, застой
+  checkpoints [--with <репо>] [--team]
+                                линии чекпоинтов: пункты, стоперы, техдолг, застой;
+                                --team — все линии проекта по данным сервера команды
   checkpoint tick <чп> <пункт>  отметить ручной пункт
   checkpoint close <чп> [--conditional --reason … --deadline ГГГГ-ММ-ДД --owner email
                     --waits-for линия:чп --zones a,b --debt-id id]
                                 закрыть чекпоинт; условно — с техдолгом
   debt close <чп> <долг>        закрыть техдолг
-  todo [--owner email]          мои техдолги (приоритетные первыми) и незакрытые пункты
+  todo [--owner email] [--team] мои техдолги (приоритетные первыми) и незакрытые пункты
+  login [<сервер>] [--no-browser]
+                                войти на сервер команды через дашборд
+  logout [<сервер>]             забыть токен сервера
+  sync [--server <url> --project <id>]
+                                отправить изменения, сделанные офлайн, и забрать состояние проекта
+  note <линия:чекпоинт> <текст> | --delete
+                                заметка к чекпоинту для всей команды
   watch                         держать индекс актуальным при изменении файлов
   serve [--port 4317] [--host 127.0.0.1] [--origin <url>]
                                 локальный API для дашборда с живыми обновлениями
@@ -92,6 +96,11 @@ const OPTIONS = {
   'waits-for': { type: 'string' },
   zones: { type: 'string' },
   'debt-id': { type: 'string' },
+  team: { type: 'boolean' },
+  server: { type: 'string' },
+  project: { type: 'string' },
+  browser: { type: 'boolean', default: true },
+  delete: { type: 'boolean' },
 } as const
 
 const PARSE_CONFIG = {
@@ -136,49 +145,32 @@ export function runCli(argv: readonly string[], io: Io): number | Promise<number
   const early = answerWithoutRepo(command, values, io)
   if (early !== undefined || command === undefined) return early ?? EXIT.usage
 
-  const root = findRepoRoot(values.dir === undefined ? io.cwd : path.resolve(io.cwd, values.dir))
-  if (root === undefined) {
+  const context = contextFor(command, rest, values, io)
+  if (context === undefined) {
     io.err('✖ beacon работает внутри git-репозитория')
     return EXIT.failed
   }
-  const context: Context = { root, io, values }
   if (Object.hasOwn(LONG_RUNNING, command)) return LONG_RUNNING[command]?.(context) ?? EXIT.usage
   const outcome = dispatch(command, rest, context)
   print(outcome, io, values.json === true)
   return outcome.code
 }
 
-interface Values {
-  tag?: string
-  zone?: string
-  with?: string[]
-  tests?: boolean
-  code?: boolean
-  port?: string
-  host?: string
-  origin?: string[]
-  depth?: string
-  json?: boolean
-  conditional?: boolean
-  reason?: string
-  owner?: string
-  deadline?: string
-  'waits-for'?: string
-  zones?: string
-  'debt-id'?: string
-}
-
-interface Context {
-  root: string
+/** The repository to work in; logging in and out of a named server needs none. */
+function contextFor(
+  command: string,
+  args: string[],
+  values: Context['values'],
   io: Io
-  values: Values
-}
-
-function runContext({ io }: Context): RunContext {
-  return { out: io.out, err: io.err, signal: io.signal ?? new AbortController().signal }
+): Context | undefined {
+  const root = findRepoRoot(values.dir === undefined ? io.cwd : path.resolve(io.cwd, values.dir))
+  if (root !== undefined) return { root, io, values, args }
+  const repoless = (command === 'login' || command === 'logout') && args[0] !== undefined
+  return repoless ? { root: io.cwd, io, values, args } : undefined
 }
 
 const LONG_RUNNING: Record<string, (context: Context) => Promise<number>> = {
+  ...TEAM_COMMANDS,
   watch: (context) => watchCommand(context.root, runContext(context)),
   mcp: (context) => mcpCommand(context.root, runContext(context)),
   validate: async ({ root, io, values }) => {
@@ -225,8 +217,11 @@ const COMMANDS: Record<string, Handler> = {
       : which(context.root, fromCwd(context, file)),
   status: (_, { root }) => status(root),
   history: (_, { root }) => history(root),
-  checkpoints: (_, { root, io, values }) =>
-    checkpoints(root, { with: (values.with ?? []).map((dir) => path.resolve(io.cwd, dir)) }),
+  checkpoints: (_, context) => {
+    const { root, io, values } = context
+    if (values.team === true) return teamView('checkpoints', context)
+    return checkpoints(root, { with: (values.with ?? []).map((dir) => path.resolve(io.cwd, dir)) })
+  },
   checkpoint: (args, { root, values }) =>
     checkpointCommand(root, args, {
       conditional: values.conditional,
@@ -238,11 +233,14 @@ const COMMANDS: Record<string, Handler> = {
       debtId: values['debt-id'],
     }),
   debt: (args, { root }) => debtCommand(root, args),
-  todo: (_, { root, io, values }) =>
-    todo(root, {
+  todo: (_, context) => {
+    const { root, io, values } = context
+    if (values.team === true) return teamView('todo', context)
+    return todo(root, {
       owner: values.owner,
       with: (values.with ?? []).map((dir) => path.resolve(io.cwd, dir)),
-    }),
+    })
+  },
   tree: (_, { root, values }) => {
     const depth = values.depth === undefined ? undefined : Number(values.depth)
     if (depth !== undefined && (!Number.isInteger(depth) || depth < 1)) {
@@ -279,32 +277,4 @@ function dispatch(command: string, args: string[], context: Context): CommandRes
 
 function isHookName(name: string | undefined): name is HookName {
   return HOOK_NAMES.includes(name as HookName)
-}
-
-function usage(message: string): CommandResult {
-  return result(EXIT.usage, [`✖ ${message}`], { error: message })
-}
-
-function print(outcome: CommandResult, io: Io, json: boolean): void {
-  if (json) {
-    io.out(JSON.stringify(outcome.json, null, 2))
-    return
-  }
-  if (outcome.text === '') return
-  const text = io.color ? colorize(outcome.text) : outcome.text
-  if (outcome.code === EXIT.ok) io.out(text)
-  else io.err(text)
-}
-
-const COLORS = { '✖': 'red', '⚠': 'yellow', '✓': 'green' } as const
-
-function colorize(text: string): string {
-  return text
-    .split('\n')
-    .map((line) => {
-      const mark = line.trimStart()[0] as keyof typeof COLORS | undefined
-      const color = mark === undefined ? undefined : COLORS[mark]
-      return color === undefined ? line : styleText(color, line, { validateStream: false })
-    })
-    .join('\n')
 }
