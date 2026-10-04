@@ -39,7 +39,7 @@ const frontend: CheckpointPlan = {
       id: 'profile',
       title: 'Profile',
       after: [],
-      dependsOn: [],
+      dependsOn: ['backend:billing'],
       items: [{ id: 'copy', check: 'Texts', done: { date: '2026-10-01' } }],
       closed: { date: '2026-10-10', conditional: true },
       debts: [
@@ -134,6 +134,8 @@ describe('buildTimeline', () => {
     // auth-api is closed, so login waits only for nothing it can find; billing blocks a debt.
     expect(find('frontend:login')?.blockedBy).toEqual([])
     expect(find('backend:billing')?.blocks).toEqual(['frontend:profile'])
+    // profile is closed conditionally: it no longer waits for anything, its debt does.
+    expect(find('frontend:profile')?.blockedBy).toEqual([])
     expect(timeline.problems.map((p) => p.message).join(',')).toContain(
       'frontend:login → backend:ghost'
     )

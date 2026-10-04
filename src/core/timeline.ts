@@ -43,10 +43,11 @@ export function buildTimeline(
 
   const resolve = (checkpoint: CheckpointReport): CheckpointReport => ({
     ...checkpoint,
+    // A closed checkpoint waits for nothing any more, even when closed conditionally because of it.
     blockedBy: checkpoint.dependsOn.filter((ref) => {
       const target = byRef.get(ref)
       if (!target) missing.add(`${checkpoint.ref} → ${ref}`)
-      return target !== undefined && !isFinished(target.state)
+      return target !== undefined && !isFinished(target.state) && !isFinished(checkpoint.state)
     }),
     blocks: isFinished(checkpoint.state) ? [] : waitingFor(checkpoint.ref, all),
     debts: checkpoint.debts.map((debt) => ({
