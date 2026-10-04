@@ -15,6 +15,7 @@ import tseslint from 'typescript-eslint'
 /**
  * Layers, top → bottom. A layer may import only layers below it.
  *   cli        argument parsing, output, exit codes
+ *   lib        the library entry for servers (beside commands, not under cli)
  *   commands   one use case per command (init, check, list, hook…)
  *   workspace  side effects: git, file system
  *   core       pure logic: zones, beacons, regions, commit rules
@@ -171,7 +172,7 @@ export default defineConfig([
     files: ['src/**/*.ts'],
     plugins: { boundaries },
     settings: {
-      'boundaries/elements': LAYERS.map((layer) => ({
+      'boundaries/elements': [...LAYERS, 'lib'].map((layer) => ({
         type: layer,
         pattern: `src/${layer}`,
         partialMatch: false,
@@ -195,6 +196,11 @@ export default defineConfig([
               from: { element: { type: layer } },
               allow: { to: { element: { types: { anyOf: LAYERS.slice(index) } } } },
             })),
+            // The library entry stands beside the commands: it reuses workspace and core only.
+            {
+              from: { element: { type: 'lib' } },
+              allow: { to: { element: { types: { anyOf: ['lib', 'workspace', 'core'] } } } },
+            },
           ],
         },
       ],

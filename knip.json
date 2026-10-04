@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/cli/main.ts", "scripts/*.mjs"],
+  "entry": ["src/cli/main.ts", "src/lib/index.ts", "scripts/*.mjs"],
   "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs"],
   "ignoreDependencies": ["@secretlint/secretlint-rule-preset-recommend"],
   "ignoreExportsUsedInFile": true,
