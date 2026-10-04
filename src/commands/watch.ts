@@ -1,8 +1,10 @@
 import { projectName } from '../workspace/git.js'
 import { LiveIndex, type Snapshot } from '../workspace/live-index.js'
+import { LiveValidation } from '../workspace/live-validation.js'
 
 import { EXIT, plural, requireProject } from './result.js'
 import { type RunContext, untilAborted } from './running.js'
+import { describeValidation } from './validate.js'
 
 /** `beacon watch`: keeps the index current while files change and reports each change. */
 export async function watchCommand(root: string, context: RunContext): Promise<number> {
@@ -13,10 +15,18 @@ export async function watchCommand(root: string, context: RunContext): Promise<n
   }
   const live = new LiveIndex(root).start()
   context.out(`Слежу за ${projectName(root)}: ${describe(live.current())}. Остановить — Ctrl+C`)
+  const validation = new LiveValidation(root, () => live.current().index)
   live.subscribe((snapshot) => {
     context.out(`↻ ${new Date().toLocaleTimeString('ru-RU')} ${describe(snapshot)}`)
+    validation.schedule()
   })
+  validation.subscribe((snapshot) => {
+    if (!snapshot.running && snapshot.configured)
+      context.out(describeValidation(snapshot).join('\n'))
+  })
+  validation.schedule(0)
   await untilAborted(context.signal)
+  validation.stop()
   live.stop()
   return EXIT.ok
 }

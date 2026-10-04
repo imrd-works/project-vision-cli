@@ -195,8 +195,10 @@ describe('local client', () => {
 
       const { tools } = await client.listTools()
       expect(tools.map((tool) => tool.name).toSorted((a, b) => a.localeCompare(b))).toEqual([
+        'architecture_tree',
         'audit_context',
         'list_zones',
+        'validate_architecture',
         'which_zone',
         'zone_status',
       ])
@@ -213,6 +215,8 @@ describe('local client', () => {
       )
       expect((await text('audit_context', { zone: 'security.http' })).text).toContain('helmet()')
       expect((await text('zone_status')).text).toContain('"coverage"')
+      expect((await text('architecture_tree', { depth: 2 })).text).toContain('widgets/ (1)')
+      expect((await text('validate_architecture')).text).toContain('"configured": false')
       expect((await text('which_zone', { file: 'missing.ts' })).isError).toBe(true)
 
       repo.git('rm', '-q', '.beacons/zones.yml')
