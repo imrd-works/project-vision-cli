@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
+import { CONFIG_PATH, draftConfig } from '../core/config.js'
 import { draftZones, renderDraft } from '../core/init-draft.js'
 import { MANIFEST_PATH } from '../core/manifest.js'
 import { ensureAgentsGuide } from '../workspace/agents-guide.js'
@@ -29,6 +30,9 @@ export function init(root: string): CommandResult {
     )
   }
 
+  const config = writeConfigDraft(root)
+  if (config) lines.push(`✓ ${CONFIG_PATH}: проверка архитектуры — ${config.join(', ')}`)
+
   const hooks = installHooks(root)
   const where = hooks.mode === 'husky' ? '.husky' : 'git hooks'
   if (hooks.installed.length > 0) lines.push(`✓ Хуки (${where}): ${hooks.installed.join(', ')}`)
@@ -50,4 +54,29 @@ export function init(root: string): CommandResult {
   )
 
   return result(EXIT.ok, lines, { manifest: MANIFEST_PATH, draftedZones, hooks, agents })
+}
+
+/** Writes `.beacons/config.yml` when the project already has architecture linters. */
+function writeConfigDraft(root: string): string[] | undefined {
+  const file = path.join(root, CONFIG_PATH)
+  if (existsSync(file)) return undefined
+  const draft = draftConfig(packageDependencies(root))
+  if (draft === undefined) return undefined
+  writeFileSync(file, draft)
+  return [...draft.matchAll(/- tool: ([\w-]+)/g)].map((match) => match[1] ?? '')
+}
+
+function packageDependencies(root: string): Set<string> {
+  try {
+    const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')) as Record<
+      string,
+      Record<string, string> | undefined
+    >
+    return new Set([
+      ...Object.keys(pkg['dependencies'] ?? {}),
+      ...Object.keys(pkg['devDependencies'] ?? {}),
+    ])
+  } catch {
+    return new Set()
+  }
 }

@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import type { ChangedFile } from '../core/commit-check.js'
 import { parseCommitBeacons } from '../core/commit-message.js'
+import { CONFIG_PATH, type ConfigResult, parseConfig } from '../core/config.js'
 import { buildFileChanges } from '../core/diff.js'
 import { MANIFEST_PATH, type Manifest, parseManifest, resolveZoneId } from '../core/manifest.js'
 import { parseMarkup } from '../core/markup.js'
@@ -45,6 +46,12 @@ export function loadProject(root: string, source?: ManifestSource): ProjectLoad 
     kind: 'ok',
     project: { root, manifest: parsed.manifest, resolver: createZoneResolver(parsed.manifest) },
   }
+}
+
+/** `.beacons/config.yml` of the working tree; defaults when it does not exist. */
+export function loadConfig(root: string): ConfigResult {
+  const file = path.join(root, CONFIG_PATH)
+  return parseConfig(existsSync(file) ? readFileSync(file, 'utf8') : undefined)
 }
 
 function manifestText(root: string, source: ManifestSource): string | undefined {
