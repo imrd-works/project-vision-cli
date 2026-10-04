@@ -44,10 +44,18 @@ export class TestRepo {
     })
   }
 
-  /** Commits everything without running hooks — the way `--no-verify` does. */
-  commitAll(message: string): string {
+  /** Commits everything without running hooks — the way `--no-verify` does; `date` backdates it. */
+  commitAll(message: string, date?: string): string {
     this.git('add', '-A')
-    this.git('commit', '-q', '--no-verify', '--allow-empty', '-m', message)
+    const env =
+      date === undefined
+        ? {}
+        : { GIT_AUTHOR_DATE: `${date}T12:00:00`, GIT_COMMITTER_DATE: `${date}T12:00:00` }
+    execFileSync('git', ['commit', '-q', '--no-verify', '--allow-empty', '-m', message], {
+      cwd: this.root,
+      env: { ...process.env, ...env },
+      stdio: 'ignore',
+    })
     return this.git('rev-parse', 'HEAD').trim()
   }
 

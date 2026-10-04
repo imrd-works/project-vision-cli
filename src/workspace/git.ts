@@ -135,3 +135,9 @@ export function commitLog(root: string, limit = 5000): string {
     ]) ?? ''
   )
 }
+
+/** The author of commits made here: `git var` honours GIT_AUTHOR_EMAIL and git config alike. */
+export function authorEmail(root: string): string | undefined {
+  const ident = tryGit(root, ['var', 'GIT_AUTHOR_IDENT'])
+  return /<([^>]+)>/.exec(ident ?? '')?.[1]?.toLowerCase()
+}
