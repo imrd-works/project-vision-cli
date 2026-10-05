@@ -25,6 +25,8 @@ export class FakeServer {
   cards: unknown[] = []
   qa: unknown = undefined
   role = 'owner'
+  /** Who the next `beacon login` signs in as. */
+  user = { email: 'ann@x.io', name: 'Ann' }
   private readonly entities: Record<string, unknown>[] = []
   private server: Server | undefined
 
@@ -89,7 +91,7 @@ export class FakeServer {
     if ((body as { pollSecret?: string }).pollSecret !== 'secret') return [404, {}]
     if (this.expireLogins) return [200, { status: 'expired' }]
     if (this.pendingClaims-- > 0) return [200, { status: 'pending' }]
-    return [200, { status: 'approved', token: TOKEN, user: { email: 'ann@x.io', name: 'Ann' } }]
+    return [200, { status: 'approved', token: TOKEN, user: this.user }]
   }
 
   private pull(query: URLSearchParams): [number, unknown] {

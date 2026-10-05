@@ -28,6 +28,7 @@ const cacheSchema = z.object({
   server: z.string(),
   project: z.string(),
   syncedAt: z.string().optional(),
+  user: z.string().optional(),
   bundle: bundleSchema.optional(),
   outbox: z.array(operationSchema),
 })
@@ -37,6 +38,8 @@ export interface SyncCache {
   server: string
   project: string
   syncedAt?: string
+  /** Whose state the bundle is (roles, todo) and whose changes wait in the outbox. */
+  user?: string
   bundle?: ChangedBundle
   outbox: Operation[]
 }
@@ -54,6 +57,22 @@ export function readCache(root: string, target: { server: string; project: strin
   } catch {
     return empty
   }
+}
+
+/**
+ * The cache as the syncing person's: another person's state (their role, their todo) is dropped
+ * to be taken whole. Changes another person made offline go under their own name only: then
+ * their author is returned instead.
+ */
+export function ownCache(
+  cache: SyncCache,
+  email: string
+): { cache: SyncCache } | { author: string; waiting: number } {
+  const user = email.toLowerCase()
+  if (cache.user === undefined || cache.user === user) return { cache: { ...cache, user } }
+  if (cache.outbox.length > 0) return { author: cache.user, waiting: cache.outbox.length }
+  const { bundle: _bundle, ...rest } = cache
+  return { cache: { ...rest, user } }
 }
 
 export function writeCache(root: string, cache: SyncCache): void {

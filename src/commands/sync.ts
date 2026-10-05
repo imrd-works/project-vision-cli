@@ -7,7 +7,7 @@ import { loadCredential } from '../workspace/credentials.js'
 import { writeAllowedSigners } from '../workspace/identity.js'
 import { loadConfig } from '../workspace/project.js'
 import { ServerClient, ServerError } from '../workspace/server-client.js'
-import { readCache, type SyncCache, writeCache } from '../workspace/sync-cache.js'
+import { ownCache, readCache, type SyncCache, writeCache } from '../workspace/sync-cache.js'
 
 import { serverFailure } from './login.js'
 import { type CommandResult, EXIT, result } from './result.js'
@@ -50,16 +50,9 @@ export async function sync(
   target: Target,
   configDir: string
 ): Promise<CommandResult> {
-  const credential = loadCredential(configDir, target.server)
-  if (!credential) {
-    return result(
-      EXIT.failed,
-      [`✖ Вы не вошли на ${target.server}: beacon login ${target.server}`],
-      { error: 'not-logged-in' }
-    )
-  }
-  const client = new ServerClient(target.server, credential.token)
-  const cache = readCache(root, target)
+  const opened = openCache(root, target, configDir)
+  if ('failure' in opened) return opened.failure
+  const { cache, client } = opened
   let pushed: PushResult | undefined
   try {
     if (cache.outbox.length > 0) {
@@ -90,6 +83,37 @@ export async function sync(
       waiting: cache.outbox.length,
     })
   }
+}
+
+/** The cache of the logged-in person and a client of the server, or why there is none. */
+function openCache(
+  root: string,
+  target: Target,
+  configDir: string
+): { cache: SyncCache; client: ServerClient } | { failure: CommandResult } {
+  const credential = loadCredential(configDir, target.server)
+  if (!credential) {
+    return {
+      failure: result(
+        EXIT.failed,
+        [`✖ Вы не вошли на ${target.server}: beacon login ${target.server}`],
+        { error: 'not-logged-in' }
+      ),
+    }
+  }
+  const owned = ownCache(readCache(root, target), credential.user.email)
+  if ('author' in owned) {
+    return {
+      failure: result(
+        EXIT.failed,
+        [
+          `✖ Изменения ${owned.author} ещё не отправлены (${String(owned.waiting)}): войдите как ${owned.author} и выполните beacon sync`,
+        ],
+        { error: 'outbox-of-another-user', user: owned.author }
+      ),
+    }
+  }
+  return { cache: owned.cache, client: new ServerClient(target.server, credential.token) }
 }
 
 /** The team's keys, for git to verify signatures with (`git log --show-signature`, the hooks). */
