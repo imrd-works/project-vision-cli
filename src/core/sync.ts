@@ -127,6 +127,32 @@ export const signersSchema = z.object({
   allowedSigners: z.string(),
 })
 
+/**
+ * A card of a task tracker linked through its beacons: to zones, their owners and the
+ * checkpoints where the zones are items.
+ */
+export const trackerCardSchema = z.object({
+  tracker: z.string(),
+  key: z.string(),
+  title: z.string(),
+  url: z.string(),
+  status: z.string(),
+  closed: z.boolean(),
+  updatedAt: z.string(),
+  links: z.array(
+    z.object({
+      zone: z.string(),
+      link: z.enum(['task', 'stopper', 'debt']),
+      repository: z.string().nullable(),
+      owner: z.string().nullable(),
+      checkpoints: z.array(z.string()),
+    })
+  ),
+  /** Beacons naming zones the project does not have. */
+  unresolved: z.array(z.string()),
+})
+
+export type TrackerCard = z.infer<typeof trackerCardSchema>
 export type Person = z.infer<typeof personSchema>
 export type ZoneOwner = z.infer<typeof zoneOwnerSchema>
 export type Signers = z.infer<typeof signersSchema>
@@ -160,6 +186,7 @@ export const bundleSchema = z.object({
   people: z.array(personSchema).optional(),
   owners: z.array(zoneOwnerSchema).optional(),
   signers: signersSchema.optional(),
+  cards: z.array(trackerCardSchema).optional(),
 })
 
 export const pushResultSchema = z.object({
@@ -253,3 +280,34 @@ export const approvalDataSchema = z.object({
 
 export type GrantData = z.infer<typeof grantDataSchema>
 export type ApprovalData = z.infer<typeof approvalDataSchema>
+
+const CARD_MARKS = { task: '☐', stopper: '⛔', debt: '⚑' } as const
+const CARD_WORDS = { task: 'задача', stopper: 'стопер', debt: 'техдолг' } as const
+
+/** Open tracker cards by checkpoint (`line:id`): one line each, stoppers first. */
+export function cardsByCheckpoint(cards: readonly TrackerCard[]): Map<string, string[]> {
+  const lines = new Map<string, { rank: number; text: string }[]>()
+  for (const card of cards.filter((entry) => !entry.closed)) {
+    for (const link of card.links) {
+      for (const ref of link.checkpoints) {
+        const text = `${CARD_MARKS[link.link]} ${CARD_WORDS[link.link]} ${card.key} «${card.title}» (${card.tracker})`
+        const rank = link.link === 'stopper' ? 0 : 1
+        lines.set(ref, [...(lines.get(ref) ?? []), { rank, text }])
+      }
+    }
+  }
+  return new Map(
+    [...lines].map(([ref, entries]) => [
+      ref,
+      [...new Set(entries.toSorted((a, b) => a.rank - b.rank).map((entry) => entry.text))],
+    ])
+  )
+}
+
+/** Open cards linked to the zones a person owns. */
+export function cardsOf(cards: readonly TrackerCard[], email: string): TrackerCard[] {
+  const me = email.toLowerCase()
+  return cards.filter(
+    (card) => !card.closed && card.links.some((link) => link.owner?.toLowerCase() === me)
+  )
+}

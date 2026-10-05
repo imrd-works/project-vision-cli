@@ -4,6 +4,8 @@ import { z } from 'zod'
 
 import type { TimelineResult } from '../core/snapshot.js'
 import {
+  cardsByCheckpoint,
+  cardsOf,
   type ChangedBundle,
   CHECKPOINT_REF,
   describeAudit,
@@ -173,7 +175,19 @@ export function serverTodo(root: string, target: Target, owner: string | undefin
   if (who === undefined) return result(EXIT.failed, ['✖ Не знаю, кто вы: задайте --owner'], {})
   if (!('timeline' in timeline)) return result(EXIT.ok, ['• Чекпоинтов нет — и задач тоже'], {})
   const shown = describeTodo(todoFor(timeline.timeline, who))
-  return { ...shown, text: [header(cache), shown.text].join('\n') }
+  const cards = cardsOf(cache.bundle.cards ?? [], who)
+  const cardLines =
+    cards.length === 0
+      ? []
+      : [
+          'Карточки трекеров по вашим зонам:',
+          ...cards.map((card) => `  ${card.key} «${card.title}» — ${card.status} · ${card.url}`),
+        ]
+  return {
+    code: shown.code,
+    text: [header(cache), shown.text, ...cardLines].join('\n'),
+    json: { ...(shown.json as object), cards },
+  }
 }
 
 const timelineShape = z.union([
@@ -259,13 +273,20 @@ function countNotes(bundle: ChangedBundle | undefined): number {
 
 /** Lines under each checkpoint: the team's note, then the state of its cross-audit. */
 function teamExtras(cache: SyncCache): Map<string, string[]> {
+  const bundle = cache.bundle
+  const notes = [...notesOf(bundle?.entities ?? [], cache.outbox)].map(
+    ([ref, note]): [string, string[]] => [
+      ref,
+      [`✎ ${note.text}${note.pending ? ' (не отправлена)' : ''}`],
+    ]
+  )
+  const audits = (bundle?.audits ?? []).map((audit): [string, string[]] => [
+    audit.checkpoint,
+    [describeAudit(audit)],
+  ])
   const extras = new Map<string, string[]>()
-  const add = (ref: string, line: string): void => {
-    extras.set(ref, [...(extras.get(ref) ?? []), line])
+  for (const [ref, lines] of [...notes, ...audits, ...cardsByCheckpoint(bundle?.cards ?? [])]) {
+    extras.set(ref, [...(extras.get(ref) ?? []), ...lines])
   }
-  for (const [ref, note] of notesOf(cache.bundle?.entities ?? [], cache.outbox)) {
-    add(ref, `✎ ${note.text}${note.pending ? ' (не отправлена)' : ''}`)
-  }
-  for (const audit of cache.bundle?.audits ?? []) add(audit.checkpoint, describeAudit(audit))
   return extras
 }
