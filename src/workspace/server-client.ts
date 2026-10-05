@@ -1,4 +1,4 @@
-import type { z } from 'zod'
+import { z } from 'zod'
 
 import {
   type Bundle,
@@ -26,6 +26,14 @@ export class ServerError extends Error {
   }
 }
 
+const serverMetaSchema = z.object({
+  version: z.string(),
+  apiVersion: z.number(),
+  minClientVersion: z.string(),
+})
+
+export type ServerMeta = z.infer<typeof serverMetaSchema>
+
 /** The team server's API for the CLI (backend: cli-auth and sync modules). */
 export class ServerClient {
   constructor(
@@ -39,6 +47,11 @@ export class ServerClient {
 
   claimLogin(id: string, pollSecret: string): Promise<LoginClaim> {
     return this.call('POST', `/cli-auth/logins/${id}/claim`, loginClaimSchema, { pollSecret })
+  }
+
+  /** The server's versions and licensing; public. */
+  meta(): Promise<ServerMeta> {
+    return this.call('GET', '/meta', serverMetaSchema)
   }
 
   pull(project: string, since?: { revision: number; day: string }): Promise<Bundle> {

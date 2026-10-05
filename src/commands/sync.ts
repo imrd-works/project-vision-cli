@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import { z } from 'zod'
 
+import { describePlan, type Feature, isOlder, missingFeature } from '../core/plan.js'
 import { type ChangedBundle, CHECKPOINT_REF, type PushResult, versionOf } from '../core/sync.js'
 import { loadCredential } from '../workspace/credentials.js'
 import { writeAllowedSigners } from '../workspace/identity.js'
@@ -11,6 +12,7 @@ import { ownCache, readCache, type SyncCache, writeCache } from '../workspace/sy
 
 import { serverFailure } from './login.js'
 import { type CommandResult, EXIT, result } from './result.js'
+import { packageVersion } from './running.js'
 
 export interface Target {
   server: string
@@ -67,7 +69,8 @@ export async function sync(
     keepSigners(root, cache.bundle)
     cache.syncedAt = new Date().toISOString()
     writeCache(root, cache)
-    return result(EXIT.ok, describeSync(cache, bundle.changed, pushed), {
+    const notes = await syncNotes(client, cache)
+    return result(EXIT.ok, [...describeSync(cache, bundle.changed, pushed), ...notes], {
       revision: bundle.revision,
       changed: bundle.changed,
       pushed: pushed?.results ?? [],
@@ -170,6 +173,38 @@ export function header(cache: SyncCache): string {
   const bundle = cache.bundle
   const when = cache.syncedAt?.slice(0, 16).replace('T', ' ') ?? '—'
   return `Сервер ${cache.server} · «${bundle?.project?.name ?? '?'}» · данные на ${when} (ревизия ${String(bundle?.revision ?? 0)})`
+}
+
+/** The plan of the project and whether this client is too old for the server. */
+async function syncNotes(client: ServerClient, cache: SyncCache): Promise<string[]> {
+  const plan = cache.bundle?.plan ? [`  ${describePlan(cache.bundle.plan)}`] : []
+  return [...plan, ...(await clientNotes(client))]
+}
+
+/** An older server without /meta says nothing. */
+async function clientNotes(client: ServerClient): Promise<string[]> {
+  try {
+    const meta = await client.meta()
+    return isOlder(packageVersion(), meta.minClientVersion)
+      ? [
+          `  ⚠ Сервер ${meta.version} ждёт beacon ${meta.minClientVersion} или новее (у вас ${packageVersion()}): обновите клиент`,
+        ]
+      : []
+  } catch {
+    return []
+  }
+}
+
+/** Refuses a command whose feature the project's plan lacks, as of the last sync. */
+export function planRefusal(
+  root: string,
+  target: Target,
+  feature: Feature
+): CommandResult | undefined {
+  const missing = missingFeature(readCache(root, target).bundle?.plan, feature)
+  return missing === undefined
+    ? undefined
+    : result(EXIT.failed, [`✖ ${missing}`], { error: 'plan', feature })
 }
 
 function describeSync(

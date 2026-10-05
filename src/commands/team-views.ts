@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { describePlan } from '../core/plan.js'
 import { qaByCheckpoint } from '../core/qa.js'
 import type { TimelineResult } from '../core/snapshot.js'
 import {
@@ -25,15 +26,16 @@ export function serverCheckpoints(root: string, target: Target): CommandResult {
   const cache = readCache(root, target)
   const timeline = cachedTimeline(cache)
   if (!cache.bundle || timeline === undefined) return notSynced()
+  const top = [header(cache), ...(cache.bundle.plan ? [describePlan(cache.bundle.plan)] : [])]
   if ('missing' in timeline) {
     return result(
       EXIT.ok,
-      [header(cache), '• В репозиториях проекта нет планов чекпоинтов (.beacons/checkpoints.yml)'],
+      [...top, '• В репозиториях проекта нет планов чекпоинтов (.beacons/checkpoints.yml)'],
       { missing: true }
     )
   }
   const shown = describeTimeline(timeline, teamExtras(cache))
-  return { ...shown, text: [header(cache), shown.text].join('\n') }
+  return { ...shown, text: [...top, shown.text].join('\n') }
 }
 
 /** `beacon todo --server`: my list across the project as of the last sync. */

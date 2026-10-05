@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { planSchema } from './plan.js'
 import { qaSchema } from './qa.js'
 
 /**
@@ -191,6 +192,7 @@ export const bundleSchema = z.object({
   signers: signersSchema.optional(),
   cards: z.array(trackerCardSchema).optional(),
   qa: qaSchema.optional(),
+  plan: planSchema.optional(),
 })
 
 export const pushResultSchema = z.object({
