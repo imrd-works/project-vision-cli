@@ -1,6 +1,8 @@
 import { type ChangedFile, touchedZones } from '../core/commit-check.js'
 import type { Grant, ZoneOwnerRecord } from '../core/ownership.js'
 import {
+  type ApprovalData,
+  approvalDataSchema,
   type ChangedBundle,
   type GrantData,
   grantDataSchema,
@@ -121,6 +123,25 @@ function toGrant(
     ...(grantedBy === undefined ? {} : { grantedBy }),
     reason: data.reason,
   }
+}
+
+/** Decisions on this repository's exceptions, by exception ID. */
+export function approvalsOf(
+  entities: readonly SyncEntity[],
+  repository: string
+): Map<string, ApprovalData & { by?: string | undefined; at: string }> {
+  const approvals = new Map<string, ApprovalData & { by?: string | undefined; at: string }>()
+  for (const entity of entities) {
+    if (entity.kind !== 'exception-approval' || !entity.key.startsWith(`${repository}:`)) continue
+    const data = approvalDataSchema.safeParse(entity.data)
+    if (!data.success) continue
+    approvals.set(entity.key.slice(repository.length + 1), {
+      ...data.data,
+      by: entity.updatedBy?.email,
+      at: entity.updatedAt,
+    })
+  }
+  return approvals
 }
 
 /** Each changed file with the zones it touches: by path, by file beacons, by changed regions. */

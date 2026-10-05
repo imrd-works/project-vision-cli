@@ -77,6 +77,24 @@ describe('live widgets', () => {
       expect(result.err).not.toContain('no-console')
     })
 
+    it('counts a violation the registry excuses as a deliberate deviation', async () => {
+      repo
+        .write('eslint-report.json', eslintReport(repo.root))
+        .write('.beacons/config.yml', config('cat eslint-report.json'))
+        .write(
+          '.beacons/rules.yml',
+          'version: 1\nrules:\n  layers:\n    title: Layers\n    validatorRules: [boundaries/*]\n'
+        )
+        .write(
+          '.beacons/exceptions.yml',
+          'version: 1\nexceptions:\n  - id: pricing-imports-page\n    rule: layers\n    zones: [home.pricing]\n    reason: The toggle reads the page state until the store exists\n    author: test@example.com\n    date: 2026-10-05\n'
+        )
+      const result = await repo.start(['validate']).stop()
+      expect(result.code).toBe(0)
+      expect(result.out).toContain('✓ architecture: нарушений архитектуры нет, по исключениям: 1')
+      expect(result.out).toContain('— по исключению pricing-imports-page')
+    })
+
     it('passes, explains a missing setup and reports a broken tool', async () => {
       repo.write('.beacons/config.yml', config("echo '[]'"))
       expect(await repo.start(['validate']).stop()).toMatchObject({

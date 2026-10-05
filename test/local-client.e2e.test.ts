@@ -201,6 +201,7 @@ describe('local client', () => {
         'checkpoints',
         'gate_check',
         'list_zones',
+        'record_exception',
         'todo',
         'validate_architecture',
         'which_zone',
@@ -226,6 +227,25 @@ describe('local client', () => {
       expect((await text('gate_check', { files: ['src/app.ts'] })).text).toContain(
         '"unchecked": true'
       )
+      const exception = await text('record_exception', {
+        rule: 'naming',
+        zones: ['home'],
+        reason: 'Legacy names',
+        raw: 'ну там старые имена',
+      })
+      expect(exception).toMatchObject({ isError: true })
+      expect(exception.text).toContain('нет в .beacons/rules.yml')
+      repo.write('.beacons/rules.yml', 'version: 1\nrules:\n  naming:\n    title: Names\n')
+      expect(
+        (
+          await text('record_exception', {
+            rule: 'naming',
+            zones: ['home'],
+            reason: 'Legacy names',
+            raw: 'ну там старые имена',
+          })
+        ).text
+      ).toContain('"raw": "ну там старые имена"')
 
       repo.git('rm', '-q', '.beacons/zones.yml')
       expect((await text('audit_context', {})).isError).toBe(true)

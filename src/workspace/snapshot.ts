@@ -6,6 +6,7 @@ import { CHECKPOINTS_PATH } from '../core/checkpoints.js'
 import { CONFIG_PATH } from '../core/config.js'
 import { parseCommitLog } from '../core/history.js'
 import { MANIFEST_PATH } from '../core/manifest.js'
+import { EXCEPTIONS_PATH, RULES_PATH } from '../core/registry.js'
 import type { RepositorySnapshot } from '../core/snapshot.js'
 
 import { commitLog, listFiles, projectName } from './git.js'
@@ -20,6 +21,8 @@ export function collectSnapshot(root: string): RepositorySnapshot {
   const zones = readText(root, MANIFEST_PATH)
   const checkpoints = readText(root, CHECKPOINTS_PATH)
   const config = readText(root, CONFIG_PATH)
+  const rules = readText(root, RULES_PATH)
+  const exceptions = readText(root, EXCEPTIONS_PATH)
   return {
     format: 1,
     name: projectName(root),
@@ -28,6 +31,8 @@ export function collectSnapshot(root: string): RepositorySnapshot {
       ...(zones === undefined ? {} : { zones }),
       ...(checkpoints === undefined ? {} : { checkpoints }),
       ...(config === undefined ? {} : { config }),
+      ...(rules === undefined ? {} : { rules }),
+      ...(exceptions === undefined ? {} : { exceptions }),
     },
     ...(load.kind === 'ok' ? { index: scanProject(load.project) } : {}),
     commits: parseCommitLog(commitLog(root)),

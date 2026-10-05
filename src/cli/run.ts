@@ -12,6 +12,7 @@ import { list } from '../commands/list.js'
 import { mark } from '../commands/mark.js'
 import { mcpCommand } from '../commands/mcp.js'
 import { gate } from '../commands/ownership.js'
+import { addException, exceptions, rules } from '../commands/registry.js'
 import { type CommandResult, EXIT } from '../commands/result.js'
 import { rights } from '../commands/rights.js'
 import { packageVersion } from '../commands/running.js'
@@ -132,7 +133,7 @@ function longRunning(
   args: readonly string[]
 ): ((context: Context) => Promise<number>) | undefined {
   const sub = `${command} ${args[0] ?? ''}`
-  const name = sub === 'audit start' ? sub : command
+  const name = sub === 'audit start' || sub === 'exception approve' ? sub : command
   return Object.hasOwn(LONG_RUNNING, name) ? LONG_RUNNING[name] : undefined
 }
 
@@ -198,7 +199,25 @@ const COMMANDS: Record<string, Handler> = {
       io.configDir
     )
   },
+  rules: (_, { root }) => rules(root),
   rights: (_, { root, io }) => rights(root, io.configDir),
+  exceptions: (_, { root, values }) => exceptions(root, values.zone),
+  exception: ([sub], { root, values }) => {
+    if (sub !== 'add' || values.rule === undefined || values.reason === undefined) {
+      return usage(
+        'beacon exception add --rule <id> --zones a,b [--paths glob] --reason "…" | exception approve <id>'
+      )
+    }
+    return addException(root, {
+      id: values.id,
+      rule: values.rule,
+      zones: splitList(values.zones),
+      paths: splitList(values.paths),
+      reason: values.reason,
+      raw: values.raw,
+      checkpoint: values.checkpoint,
+    })
+  },
   check: (_, { root, io, values }) =>
     check(root, { with: (values.with ?? []).map((dir) => path.resolve(io.cwd, dir)) }),
   list: (_, { root, values: { tag, zone } }) =>
@@ -261,6 +280,13 @@ function dispatch(command: string, args: string[], context: Context): CommandRes
   return handler
     ? handler(args, context)
     : usage(`неизвестная команда "${command}" — см. beacon --help`)
+}
+
+function splitList(value: string | undefined): string[] {
+  return (value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
 }
 
 function isHookName(name: string | undefined): name is HookName {

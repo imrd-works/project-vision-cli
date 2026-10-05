@@ -238,6 +238,11 @@ describe('checkpoints', () => {
           ],
         },
       })
+      expect(await getJson(`${server.url}/api/registry`)).toEqual({
+        rules: [],
+        exceptions: [],
+        problems: [],
+      })
       expect(await getJson(`${server.url}/api/todo`)).toMatchObject({
         owner: 'ann@x.io',
         items: [{ zone: 'ui.input' }, { zone: 'auth.page' }],

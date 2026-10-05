@@ -1,6 +1,9 @@
-import { hasErrors, type Problem, warning } from '../core/problem.js'
-import { findRepoRoot } from '../workspace/git.js'
+import { error, hasErrors, type Problem, warning } from '../core/problem.js'
+import type { ProjectIndex } from '../core/project-index.js'
+import { coveringException, namingViolations } from '../core/registry.js'
+import { findRepoRoot, listFiles } from '../workspace/git.js'
 import { loadProject, type Project, scanProject } from '../workspace/project.js'
+import { loadRegistry } from '../workspace/registry.js'
 
 import {
   type CommandResult,
@@ -18,7 +21,11 @@ export function check(root: string, options: { with: readonly string[] }): Comma
   const { project } = loaded
 
   const index = scanProject(project)
-  const problems = [...index.problems, ...options.with.flatMap((other) => compare(project, other))]
+  const problems = [
+    ...index.problems,
+    ...registryProblems(project, index),
+    ...options.with.flatMap((other) => compare(project, other)),
+  ]
   const errors = problems.filter((p) => p.severity === 'error').length
   const warnings = problems.length - errors
   const zoned = index.files.length
@@ -38,6 +45,26 @@ export function check(root: string, options: { with: readonly string[] }): Comma
     [...problems.map((p) => formatProblem(p)), summary, ...tail],
     { ok: !hasErrors(problems), zones: index.zones.length, zonedFiles: zoned, problems }
   )
+}
+
+/**
+ * The registry's own problems and the naming rules: a file that breaks one is an error unless an
+ * exception covers it — then it is a reminder of the agreed deviation.
+ */
+function registryProblems(project: Project, index: ProjectIndex): Problem[] {
+  const registry = loadRegistry(project.root, project.manifest)
+  const zonesOf = new Map(index.files.map((file) => [file.path, file.zones]))
+  const naming = namingViolations(registry.rules, listFiles(project.root)).map((violation) => {
+    const exception = coveringException(registry, {
+      rule: violation.rule,
+      file: violation.file,
+      zones: zonesOf.get(violation.file) ?? [],
+    })
+    return exception
+      ? warning(`${violation.message} — по исключению ${exception.id}`, { file: violation.file })
+      : error(`${violation.message} (правило ${violation.rule})`, { file: violation.file })
+  })
+  return [...registry.problems, ...naming]
 }
 
 /** Zones that exist only on one side: IDs are project-wide and must match across repos. */

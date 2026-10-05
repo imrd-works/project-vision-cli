@@ -6,6 +6,7 @@ import { authorActivity, buildHistory, type CommitRecord, type History } from '.
 import { type Manifest, parseManifest } from './manifest.js'
 import { error, type Problem } from './problem.js'
 import type { ProjectIndex } from './project-index.js'
+import { parseRegistry, type Registry } from './registry.js'
 import { type Activity, buildTimeline, type Timeline } from './timeline.js'
 
 /**
@@ -18,7 +19,14 @@ export interface RepositorySnapshot {
   /** The repository's name: its line on the timeline unless the plan names another. */
   name: string
   generatedAt: string
-  files: { zones?: string; checkpoints?: string; config?: string }
+  files: {
+    zones?: string
+    checkpoints?: string
+    config?: string
+    /** The architect's registry: `.beacons/rules.yml`, `.beacons/exceptions.yml`. */
+    rules?: string
+    exceptions?: string
+  }
   /** Absent when the zone map is missing or invalid. */
   index?: ProjectIndex
   /** Recent non-merge commits, newest first. */
@@ -129,6 +137,15 @@ export function combineLines(lines: readonly LineInput[], options: TimelineOptio
 }
 
 /** The cross-audits of a snapshot's line: reports and summaries by checkpoint (`line:id`). */
+/** The architect's rules and the deliberate deviations of a repository at a commit. */
+export function registryView(snapshot: RepositorySnapshot): Registry {
+  const state = manifestState(snapshot)
+  return parseRegistry(
+    { rules: snapshot.files.rules, exceptions: snapshot.files.exceptions },
+    state.kind === 'ok' ? state.manifest : undefined
+  )
+}
+
 export function auditView(snapshot: RepositorySnapshot): {
   line?: string
   audits: CheckpointAudit[]

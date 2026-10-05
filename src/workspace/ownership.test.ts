@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { SyncEntity } from '../core/sync.js'
 
-import { grantsOf, sameRemote } from './ownership.js'
+import { approvalsOf, grantsOf, sameRemote } from './ownership.js'
 
 function entity(kind: string, key: string, data: unknown): SyncEntity {
   return {
@@ -26,13 +26,16 @@ describe('team ownership', () => {
     expect(sameRemote('https://github.com/org/backend', 'https://github.com/org/web')).toBe(false)
   })
 
-  it('reads grants of this repository only', () => {
+  it('reads grants and decisions of this repository only', () => {
     const entities = [
       entity('grant', 'backend:auth/eve@x.io', { until: '2026-10-12', reason: 'Fix' }),
       entity('grant', 'backend:billing/eve@x.io', { until: null, reason: '' }),
       entity('grant', 'web:ui/eve@x.io', { until: null, reason: '' }),
       entity('grant', 'backend:auth/bob@x.io', null),
       entity('note', 'backend:auth', { text: 'x' }),
+      entity('exception-approval', 'backend:legacy', { decision: 'approved' }),
+      entity('exception-approval', 'backend:broken', { decision: 'maybe' }),
+      entity('exception-approval', 'web:legacy', { decision: 'rejected' }),
     ]
     expect(grantsOf(entities, 'backend')).toEqual([
       {
@@ -43,6 +46,9 @@ describe('team ownership', () => {
         reason: 'Fix',
       },
       { zone: 'billing', grantee: 'eve@x.io', grantedBy: 'ann@x.io', reason: '' },
+    ])
+    expect([...approvalsOf(entities, 'backend')]).toEqual([
+      ['legacy', { decision: 'approved', by: 'ann@x.io', at: '2026-10-05T10:00:00.000Z' }],
     ])
   })
 })

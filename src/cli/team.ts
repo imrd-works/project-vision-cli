@@ -1,6 +1,7 @@
 import { grant, grants } from '../commands/grants.js'
 import { login, logout } from '../commands/login.js'
 import { owners, setupSigning, whoami } from '../commands/people.js'
+import { decideException } from '../commands/registry.js'
 import type { CommandResult } from '../commands/result.js'
 import {
   note,
@@ -69,6 +70,19 @@ export const TEAM_COMMANDS: Record<string, (context: Context) => Promise<number>
   },
   grants: (context) =>
     withTarget(context, (target) => grants(context.root, target, context.args[0])),
+  'exception approve': (context) => {
+    const [, id] = context.args
+    if (id === undefined) {
+      return printed(context, usage('beacon exception approve <id> [--reject] [--comment …]'))
+    }
+    return withTarget(context, (target) =>
+      decideException(context.root, target, context.io.configDir, {
+        id,
+        reject: context.values.reject === true,
+        comment: context.values.comment,
+      })
+    )
+  },
   signing: (context) => {
     if (context.args[0] !== 'setup') {
       return printed(context, usage('beacon signing setup [--key <файл .pub>]'))

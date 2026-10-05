@@ -19,11 +19,13 @@ export type {
 export type { CommitRecord, History } from '../core/history.js'
 export type { Problem } from '../core/problem.js'
 export type { ProjectIndex } from '../core/project-index.js'
+export type { ArchException, Registry, Rule } from '../core/registry.js'
 export {
   auditView,
   historyView,
   indexView,
   type IndexView,
+  registryView,
   type RepositorySnapshot,
   timelineView,
   type TimelineResult,

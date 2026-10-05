@@ -245,4 +245,11 @@ export const grantDataSchema = z.object({
   reason: z.string(),
 })
 
+/** A decision on an exception of the registry: `<repository>:<exception id>`. */
+export const approvalDataSchema = z.object({
+  decision: z.enum(['approved', 'rejected']),
+  comment: z.string().optional(),
+})
+
 export type GrantData = z.infer<typeof grantDataSchema>
+export type ApprovalData = z.infer<typeof approvalDataSchema>
