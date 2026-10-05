@@ -3,15 +3,9 @@ import { login, logout } from '../commands/login.js'
 import { owners, setupSigning, whoami } from '../commands/people.js'
 import { decideException } from '../commands/registry.js'
 import type { CommandResult } from '../commands/result.js'
-import {
-  note,
-  serverCheckpoints,
-  serverTodo,
-  sync,
-  syncTarget,
-  type Target,
-} from '../commands/sync.js'
+import { note, sync, syncTarget, type Target } from '../commands/sync.js'
 import { sign, startAudit } from '../commands/team-audit.js'
+import { serverCheckpoints, serverTodo } from '../commands/team-views.js'
 
 import { type Context, print, usage } from './context.js'
 
