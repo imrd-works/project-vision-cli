@@ -23,6 +23,8 @@ export class FakeServer {
   owners: unknown[] = []
   signers: unknown = { signers: [], allowedSigners: '' }
   cards: unknown[] = []
+  qa: unknown = undefined
+  role = 'owner'
   private readonly entities: Record<string, unknown>[] = []
   private server: Server | undefined
 
@@ -101,7 +103,7 @@ export class FakeServer {
         revision: this.revision,
         day,
         changed: true,
-        project: { id: PROJECT, name: 'Vision', role: 'owner' },
+        project: { id: PROJECT, name: 'Vision', role: this.role },
         repositories: this.repositories,
         timeline: this.timeline,
         entities: this.entities,
@@ -111,6 +113,7 @@ export class FakeServer {
         owners: this.owners,
         signers: this.signers,
         cards: this.cards,
+        ...(this.qa === undefined ? {} : { qa: this.qa }),
       },
     ]
   }

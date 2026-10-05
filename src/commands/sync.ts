@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import { z } from 'zod'
 
+import { qaByCheckpoint } from '../core/qa.js'
 import type { TimelineResult } from '../core/snapshot.js'
 import {
   cardsByCheckpoint,
@@ -176,6 +177,7 @@ export function serverTodo(root: string, target: Target, owner: string | undefin
   if (!('timeline' in timeline)) return result(EXIT.ok, ['• Чекпоинтов нет — и задач тоже'], {})
   const shown = describeTodo(todoFor(timeline.timeline, who))
   const cards = cardsOf(cache.bundle.cards ?? [], who)
+  const qaLines = testerLines(cache.bundle, who)
   const cardLines =
     cards.length === 0
       ? []
@@ -185,7 +187,7 @@ export function serverTodo(root: string, target: Target, owner: string | undefin
         ]
   return {
     code: shown.code,
-    text: [header(cache), shown.text, ...cardLines].join('\n'),
+    text: [header(cache), shown.text, ...cardLines, ...qaLines].join('\n'),
     json: { ...(shown.json as object), cards },
   }
 }
@@ -285,8 +287,40 @@ function teamExtras(cache: SyncCache): Map<string, string[]> {
     [describeAudit(audit)],
   ])
   const extras = new Map<string, string[]>()
-  for (const [ref, lines] of [...notes, ...audits, ...cardsByCheckpoint(bundle?.cards ?? [])]) {
+  const sources = [
+    ...notes,
+    ...audits,
+    ...cardsByCheckpoint(bundle?.cards ?? []),
+    ...qaByCheckpoint(bundle?.qa),
+  ]
+  for (const [ref, lines] of sources) {
     extras.set(ref, [...(extras.get(ref) ?? []), ...lines])
   }
   return extras
+}
+
+/** For a tester: what is ready for testing and which fixes wait for them; for a developer: bugs of their zones. */
+function testerLines(bundle: ChangedBundle, who: string): string[] {
+  const qa = bundle.qa
+  if (!qa) return []
+  if (bundle.project?.role === 'tester') {
+    const fixed = qa.bugs.filter((bug) => bug.status === 'fixed')
+    return [
+      ...(qa.ready.length > 0
+        ? [
+            'Готово к проверке:',
+            ...qa.ready.map((entry) => `  ${entry.checkpoint} «${entry.title}»`),
+          ]
+        : []),
+      ...(fixed.length > 0
+        ? ['Исправлено, ждёт подтверждения:', ...fixed.map((bug) => `  #${bug.id} «${bug.title}»`)]
+        : []),
+    ]
+  }
+  const mine = qa.bugs.filter(
+    (bug) => bug.status === 'open' && bug.owner?.toLowerCase() === who.toLowerCase()
+  )
+  return mine.length === 0
+    ? []
+    : ['Баги ваших зон:', ...mine.map((bug) => `  #${bug.id} «${bug.title}» (${bug.severity})`)]
 }
