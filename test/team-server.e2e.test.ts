@@ -163,6 +163,33 @@ describe('team server', () => {
       expect(repo.run(['checkpoints', '--team']).err).toContain('выполните beacon sync')
     })
 
+    it('takes the whole state for another person and keeps changes to their author', async () => {
+      configure()
+      await repo.runAsync(['login', '--no-browser'])
+      await repo.runAsync(['sync'])
+      server.down = true
+      await repo.runAsync(['note', 'backend:auth', 'Mine'])
+      server.down = false
+
+      server.user = { email: 'tess@x.io', name: 'Tess' }
+      server.role = 'tester'
+      await repo.runAsync(['login', '--no-browser'])
+      const blocked = await repo.runAsync(['sync'])
+      expect(blocked.code).toBe(1)
+      expect(blocked.err).toContain('Изменения ann@x.io ещё не отправлены (1)')
+      expect(server.received).toEqual([])
+
+      server.user = { email: 'ann@x.io', name: 'Ann' }
+      await repo.runAsync(['login', '--no-browser'])
+      expect((await repo.runAsync(['sync'])).out).toContain('Отправлено изменений: 1')
+
+      // Same revision, another person: their state is taken whole, not reused.
+      server.user = { email: 'tess@x.io', name: 'Tess' }
+      await repo.runAsync(['login', '--no-browser'])
+      expect((await repo.runAsync(['sync'])).out).toContain('✓ Синхронизировано')
+      expect((await repo.runAsync(['sync'])).out).toContain('✓ Без изменений')
+    })
+
     it('asks to log in again when the token is refused and checks note arguments', async () => {
       configure()
       await repo.runAsync(['login', '--no-browser'])
