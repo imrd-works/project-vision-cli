@@ -220,6 +220,86 @@ describe('team server', () => {
     })
   })
 
+  describe('testers', () => {
+    const qa = (verdict: 'passed' | 'failed' | null, bugStatus: 'open' | 'fixed' | 'closed') => ({
+      testCases: [
+        {
+          id: 'tc1',
+          checkpoint: 'backend:release',
+          zone: null,
+          title: 'Sign in with an expired token',
+          result: verdict === null ? null : { verdict, by: 'qa@x.io', at: '2026-10-05T10:00:00Z' },
+        },
+      ],
+      bugs: [
+        {
+          id: '7',
+          title: 'Error page has no retry',
+          severity: 'major',
+          status: bugStatus,
+          zone: 'auth.api',
+          owner: 'test@example.com',
+          checkpoints: ['backend:release'],
+        },
+      ],
+      ready: [{ checkpoint: 'backend:release', title: 'Release' }],
+    })
+
+    beforeEach(async () => {
+      repo.write(
+        '.beacons/checkpoints.yml',
+        `${PLAN}  release:\n    title: Release\n    items:\n      - id: docs\n        check: Docs\n        done: { date: 2026-10-01 }\n`
+      )
+      repo.commitAll('chore: release checkpoint')
+      server.timeline = timelineView(
+        [collectSnapshot(repo.root)],
+        new Date().toLocaleDateString('sv-SE')
+      )
+      configure()
+      await repo.runAsync(['login', '--no-browser'])
+    })
+
+    it('shows test cases and bugs, and keeps a checkpoint open until testers accept it', async () => {
+      server.qa = qa('failed', 'open')
+      await repo.runAsync(['sync'])
+      const team = repo.run(['checkpoints', '--team']).out
+      expect(team).toContain('🧪 тест-кейсы: пройдено 0/1')
+      expect(team).toContain('🐞 баг #7 «Error page has no retry» — открыт')
+      expect(repo.run(['todo', '--team']).out).toContain('#7 «Error page has no retry» (major)')
+
+      const refused = repo.run(['checkpoint', 'close', 'release'])
+      expect(refused.code).toBe(1)
+      expect(refused.err).toContain('Тестировщики ещё не приняли backend:release')
+      expect(refused.err).toContain('тест-кейс «Sign in with an expired token» не пройден')
+
+      server.qa = qa('passed', 'closed')
+      server.revision++
+      await repo.runAsync(['sync'])
+      expect(repo.run(['checkpoint', 'close', 'release']).out).toContain('● release закрыт')
+    })
+
+    it('tells a tester what is ready and which fixes wait for them', async () => {
+      server.role = 'tester'
+      server.qa = qa(null, 'fixed')
+      await repo.runAsync(['sync'])
+      const todo = repo.run(['todo', '--team']).out
+      expect(todo).toContain('Готово к проверке:')
+      expect(todo).toContain('backend:release «Release»')
+      expect(todo).toContain('Исправлено, ждёт подтверждения:')
+      expect(repo.run(['checkpoints', '--team']).out).toContain('исправлен, ждёт подтверждения')
+
+      // Nothing to test, nothing fixed: no lists at all — for a tester and a developer alike.
+      server.qa = { testCases: [], bugs: [], ready: [] }
+      server.revision++
+      await repo.runAsync(['sync'])
+      expect(repo.run(['todo', '--team']).out).not.toContain('Готово к проверке')
+      server.role = 'member'
+      server.revision++
+      await repo.runAsync(['sync'])
+      expect(repo.run(['todo', '--team']).out).not.toContain('Баги ваших зон')
+    })
+  })
+
   describe('cross-audit with the team', () => {
     it('opens a round on the server and signs it', async () => {
       configure()

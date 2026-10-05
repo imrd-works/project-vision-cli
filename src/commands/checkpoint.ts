@@ -1,6 +1,9 @@
 import { CHECKPOINTS_PATH } from '../core/checkpoints.js'
+import { qaBlockers } from '../core/qa.js'
 import { type NewDebt, closeCheckpoint, closeDebt, tickItem } from '../workspace/checkpoint-file.js'
 import { authorEmail } from '../workspace/git.js'
+import { loadConfig } from '../workspace/project.js'
+import { readCache } from '../workspace/sync-cache.js'
 import { projectTimeline } from '../workspace/timeline-builder.js'
 
 import { type CommandResult, EXIT, result } from './result.js'
@@ -71,6 +74,12 @@ function close(
         `Не все пункты закрыты: ${names}. Закройте условно: --conditional --reason «…» --owner email --deadline ГГГГ-ММ-ДД`
       )
     }
+    const testing = testingBlockers(root, checkpoint.ref)
+    if (testing.length > 0) {
+      return fail(
+        `Тестировщики ещё не приняли ${checkpoint.ref}: ${testing.join('; ')}. Закройте условно: --conditional …`
+      )
+    }
     return outcome(closeCheckpoint(root, id, { date: today, by, debts: [] }), `● ${id} закрыт`)
   }
   const debt = newDebt(
@@ -84,6 +93,15 @@ function close(
     closeCheckpoint(root, id, { date: today, by, debts: [debt] }),
     `◐ ${id} закрыт условно, техдолг ${debt.id}: ${debt.owner}, до ${debt.deadline}`
   )
+}
+
+/** The testers' state of the last `beacon sync`, when this repository syncs with a team server. */
+function testingBlockers(root: string, ref: string): string[] {
+  const config = loadConfig(root)
+  const server = config.ok ? config.config.server : undefined
+  if (!server) return []
+  const cache = readCache(root, { server: server.url, project: server.project })
+  return qaBlockers(cache.bundle?.qa, ref)
 }
 
 function newDebt(

@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { qaSchema } from './qa.js'
+
 /**
  * The contract of the team server as `beacon login` and `beacon sync` see it, and the offline
  * model: what the client keeps (the last bundle) and what waits to be sent (the outbox).
@@ -153,6 +155,7 @@ export const trackerCardSchema = z.object({
 })
 
 export type TrackerCard = z.infer<typeof trackerCardSchema>
+
 export type Person = z.infer<typeof personSchema>
 export type ZoneOwner = z.infer<typeof zoneOwnerSchema>
 export type Signers = z.infer<typeof signersSchema>
@@ -187,6 +190,7 @@ export const bundleSchema = z.object({
   owners: z.array(zoneOwnerSchema).optional(),
   signers: signersSchema.optional(),
   cards: z.array(trackerCardSchema).optional(),
+  qa: qaSchema.optional(),
 })
 
 export const pushResultSchema = z.object({
