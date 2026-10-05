@@ -109,6 +109,22 @@ function keepSigners(root: string, bundle: ChangedBundle | undefined): void {
   if (bundle?.signers) writeAllowedSigners(root, bundle.signers.allowedSigners)
 }
 
+/** Queues a change of a shared entity against the version last seen; `beacon sync` sends it. */
+export function enqueue(
+  root: string,
+  target: Target,
+  change: { kind: string; key: string; data: unknown }
+): void {
+  const cache = readCache(root, target)
+  cache.outbox.push({
+    id: randomUUID(),
+    ...change,
+    baseVersion: versionOf(cache.bundle?.entities ?? [], change.kind, change.key),
+    at: new Date().toISOString(),
+  })
+  writeCache(root, cache)
+}
+
 /** `beacon note <line:checkpoint> <text>` (or `--delete`): queued, then sent if the server is up. */
 export async function note(
   root: string,
@@ -121,16 +137,11 @@ export async function note(
       error: 'bad-ref',
     })
   }
-  const cache = readCache(root, target)
-  cache.outbox.push({
-    id: randomUUID(),
+  enqueue(root, target, {
     kind: 'note',
     key: change.ref,
     data: change.text === undefined ? null : { text: change.text },
-    baseVersion: versionOf(cache.bundle?.entities ?? [], 'note', change.ref),
-    at: new Date().toISOString(),
   })
-  writeCache(root, cache)
   const queued = change.text === undefined ? 'удаление заметки' : 'заметка'
   const sent = await sync(root, target, configDir)
   const lines = [`✓ ${queued} к ${change.ref} сохранена`, sent.text]

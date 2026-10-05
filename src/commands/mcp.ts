@@ -9,6 +9,7 @@ import { auditMarkdown } from './audit.js'
 import { checkpoints } from './checkpoints.js'
 import { findCheckpoint, zonesOf } from './cross-audit.js'
 import { list } from './list.js'
+import { gate } from './ownership.js'
 import { type CommandResult, EXIT, requireProject } from './result.js'
 import { packageVersion, type RunContext, untilAborted } from './running.js'
 import { status } from './status.js'
@@ -26,14 +27,18 @@ const INSTRUCTIONS = `This repository is mapped into zones (areas of responsibil
 Before reading code for a topic (security, payments…), call list_zones or audit_context with a tag
 or zone: they return exactly the files and line ranges of that topic, so the rest of the repository
 does not need to be read. Call which_zone before editing a file to learn its zone. For a
-checkpoint's cross-audit, audit_checkpoint returns the code of all its zones.`
+checkpoint's cross-audit, audit_checkpoint returns the code of all its zones.
+Before changing code, call gate_check with the files: the logic of someone else's zone may be
+changed only by its owner, a proxy or under a grant — if it is denied, do not write that change;
+suggest it to the owner instead (name and contacts are in the answer). Texts, comments and
+formatting are free.`
 
 const filter = {
   tag: z.string().optional().describe('Audit tag, e.g. "security"'),
   zone: z.string().optional().describe('Zone ID; its subzones are included, e.g. "auth"'),
 }
 
-export function createMcpServer(root: string): McpServer {
+export function createMcpServer(root: string, options: { configDir?: string } = {}): McpServer {
   const server = new McpServer(
     { name: 'beacon', version: packageVersion() },
     { instructions: INSTRUCTIONS }
@@ -155,11 +160,40 @@ export function createMcpServer(root: string): McpServer {
     },
     ({ owner }) => json(todo(root, { owner, with: [] }))
   )
+  registerOwnershipTools(server, root, options.configDir ?? '')
   return server
 }
 
-export async function mcpCommand(root: string, context: RunContext): Promise<number> {
-  const server = createMcpServer(root)
+/** The gate before an edit. */
+function registerOwnershipTools(server: McpServer, root: string, configDir: string): void {
+  server.registerTool(
+    'gate_check',
+    {
+      title: 'May I change these files',
+      description:
+        "Before an edit: for each file, its zones and whether the logged-in person may change their logic (owner, proxy, grant), else the owner's name and contacts",
+      inputSchema: {
+        files: z.array(z.string()).min(1).describe('Paths relative to the repository root'),
+      },
+    },
+    ({ files }) => {
+      const outcome = gate(
+        root,
+        files.map((file) => relative(root, file)),
+        configDir
+      )
+      // A refusal is an answer, not a failure of the tool.
+      return { content: [{ type: 'text', text: JSON.stringify(outcome.json, null, 2) }] }
+    }
+  )
+}
+
+export async function mcpCommand(
+  root: string,
+  context: RunContext,
+  options: { configDir?: string } = {}
+): Promise<number> {
+  const server = createMcpServer(root, options)
   const transport = new StdioServerTransport()
   const closed = new Promise<void>((resolve) => {
     // eslint-disable-next-line unicorn/prefer-add-event-listener -- MCP transports expose callbacks, not EventTarget

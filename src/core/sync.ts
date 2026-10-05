@@ -143,6 +143,8 @@ export const bundleSchema = z.object({
       z.object({
         id: z.string(),
         name: z.string(),
+        /** The clone address: a checkout finds its repository by its origin remote. */
+        url: z.string().optional(),
         defaultBranch: z.string().nullable(),
         status: z.string(),
         syncedAt: z.string().nullable(),
@@ -236,3 +238,11 @@ export function describeAudit(audit: AuditState): string {
     return `⚠ кросс-аудит: есть возражения — нужен новый раунд (${progress})`
   return `◎ кросс-аудит: ${progress}`
 }
+
+/** A grant to change a zone's logic: `<repository>:<zone>/<email>`, given until a day or for good. */
+export const grantDataSchema = z.object({
+  until: z.string().nullable(),
+  reason: z.string(),
+})
+
+export type GrantData = z.infer<typeof grantDataSchema>

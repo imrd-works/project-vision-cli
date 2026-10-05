@@ -20,10 +20,18 @@ https://github.com/imrd-works/project-vision-cli/blob/main/docs/beacon-format.md
   регионом \`// #region @beacon <зона>\` … \`// #endregion\`.
 - В сообщении коммита нужен маяк каждой затронутой зоны: \`[BEACON: <зона>]\`. Хук
   \`prepare-commit-msg\` подставляет их сам — не удаляй.
+
+### Чужие зоны
+
+- До того как писать код, проверь права: \`beacon gate <файлы>\` (MCP: \`gate_check\`). Логику
+  чужой зоны меняет только её владелец, доверенное лицо или тот, кому владелец выдал грант.
+- Без согласования можно: тексты, комментарии, форматирование, использование компонента как есть.
+- Зона чужая — не генерируй правку её логики: остановись и предложи изменение владельцу (имя и
+  контакты — в ответе \`gate_check\`).
 ${END}
 `
 
-export type GuideResult = 'created' | 'appended' | 'present'
+export type GuideResult = 'created' | 'appended' | 'updated' | 'present'
 
 export function ensureAgentsGuide(root: string): GuideResult {
   const file = path.join(root, 'AGENTS.md')
@@ -32,7 +40,18 @@ export function ensureAgentsGuide(root: string): GuideResult {
     return 'created'
   }
   const current = readFileSync(file, 'utf8')
-  if (current.includes(START)) return 'present'
+  const start = current.indexOf(START)
+  const end = current.indexOf(END)
+  if (start !== -1 && end > start) {
+    const block = current.slice(start, end + END.length)
+    if (`${block}\n` === GUIDE) return 'present'
+    // An older guide of beacon: replaced, the rest of the file stays.
+    writeFileSync(
+      file,
+      `${current.slice(0, start)}${GUIDE.trimEnd()}${current.slice(end + END.length)}`
+    )
+    return 'updated'
+  }
   writeFileSync(file, `${current.replace(/\n*$/, '\n\n')}${GUIDE}`)
   return 'appended'
 }
