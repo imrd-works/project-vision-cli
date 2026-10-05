@@ -49,6 +49,14 @@ export interface Values {
   browser?: boolean
   delete?: boolean
   key?: string
+  agent?: boolean
+  'agent-hooks'?: boolean
+  until?: string
+  rule?: string
+  paths?: string
+  raw?: string
+  id?: string
+  reject?: boolean
 }
 
 export interface Context {

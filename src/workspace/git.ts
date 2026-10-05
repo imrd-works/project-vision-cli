@@ -141,3 +141,23 @@ export function authorEmail(root: string): string | undefined {
   const ident = tryGit(root, ['var', 'GIT_AUTHOR_IDENT'])
   return /<([^>]+)>/.exec(ident ?? '')?.[1]?.toLowerCase()
 }
+
+const ZERO_SHA = /^0+$/
+
+/**
+ * Commits a push sends, from the pre-push hook's stdin (`<local ref> <sha> <remote ref> <sha>`):
+ * what the remote has not seen yet.
+ */
+export function pushedCommits(root: string, remote: string, stdin: string): string[] {
+  const commits = new Set<string>()
+  for (const line of stdin.split('\n')) {
+    const [, localSha, , remoteSha] = line.trim().split(/\s+/, 4)
+    if (localSha === undefined || remoteSha === undefined || ZERO_SHA.test(localSha)) continue
+    const known =
+      !ZERO_SHA.test(remoteSha) &&
+      tryGit(root, ['cat-file', '-e', `${remoteSha}^{commit}`]) !== undefined
+    const range = known ? [`${remoteSha}..${localSha}`] : [localSha, '--not', `--remotes=${remote}`]
+    for (const sha of listCommits(root, range)) commits.add(sha)
+  }
+  return [...commits]
+}

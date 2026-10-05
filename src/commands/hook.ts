@@ -20,13 +20,13 @@ import {
   commitMessage,
   commitSubject,
   gitPath,
-  listCommits,
-  tryGit,
+  pushedCommits,
 } from '../workspace/git.js'
 import type { HookName } from '../workspace/hooks.js'
 import { commitSignatures, signingSetup, teamPeople } from '../workspace/identity.js'
 import { commitChanges, loadConfig, loadProject, stagedChanges } from '../workspace/project.js'
 
+import { commitOwnership, pushOwnership } from './ownership.js'
 import { type CommandResult, EXIT, formatProblem, result } from './result.js'
 
 /** Entry points of the git hooks installed by `beacon init`. */
@@ -42,12 +42,31 @@ export function hook(
     }
     case 'commit-msg': {
       const checked = commitMsg(root, args)
-      return checked.code === EXIT.ok ? withAuthorCheck(checked, root, options.configDir) : checked
+      return chain(
+        checked.code === EXIT.ok ? withAuthorCheck(checked, root, options.configDir) : checked,
+        () => commitOwnership(root, args[0])
+      )
     }
     case 'pre-push': {
-      const checked = prePush(root, args, options.stdin)
-      return checked.code === EXIT.ok ? verifyPushedAuthors(root, args, options.stdin) : checked
+      const [remote = 'origin'] = args
+      return chain(
+        chain(prePush(root, args, options.stdin), () =>
+          verifyPushedAuthors(root, args, options.stdin)
+        ),
+        () => pushOwnership(root, remote, options.stdin)
+      )
     }
+  }
+}
+
+/** The next check runs only when the previous one let the change through; warnings add up. */
+function chain(first: CommandResult, next: () => CommandResult): CommandResult {
+  if (first.code !== EXIT.ok) return first
+  const second = next()
+  return {
+    code: second.code,
+    text: [first.text, second.text].filter((text) => text !== '').join('\n'),
+    json: { ...(first.json as object), ...(second.json as object) },
   }
 }
 
@@ -100,8 +119,6 @@ function commitMsg(root: string, [file]: readonly string[]): CommandResult {
     ...check,
   })
 }
-
-const ZERO_SHA = /^0+$/
 
 /** Re-checks every pushed commit: catches commits made with `--no-verify`. */
 function prePush(
@@ -205,20 +222,6 @@ function verifyPushedAuthors(
     ],
     { ok: false, authors: failures }
   )
-}
-
-function pushedCommits(root: string, remote: string, stdin: string): string[] {
-  const commits = new Set<string>()
-  for (const line of stdin.split('\n')) {
-    const [, localSha, , remoteSha] = line.trim().split(/\s+/, 4)
-    if (localSha === undefined || remoteSha === undefined || ZERO_SHA.test(localSha)) continue
-    const known =
-      !ZERO_SHA.test(remoteSha) &&
-      tryGit(root, ['cat-file', '-e', `${remoteSha}^{commit}`]) !== undefined
-    const range = known ? [`${remoteSha}..${localSha}`] : [localSha, '--not', `--remotes=${remote}`]
-    for (const sha of listCommits(root, range)) commits.add(sha)
-  }
-  return [...commits]
 }
 
 function passes(check: CommitCheck): boolean {

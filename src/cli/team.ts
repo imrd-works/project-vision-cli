@@ -1,3 +1,4 @@
+import { grant, grants } from '../commands/grants.js'
 import { login, logout } from '../commands/login.js'
 import { owners, setupSigning, whoami } from '../commands/people.js'
 import type { CommandResult } from '../commands/result.js'
@@ -45,6 +46,29 @@ export const TEAM_COMMANDS: Record<string, (context: Context) => Promise<number>
     withTarget(context, (target) => whoami(context.root, target, context.io.configDir)),
   owners: (context) =>
     withTarget(context, (target) => owners(context.root, target, context.args[0])),
+  grant: (context) => {
+    const revoke = context.args[0] === 'revoke'
+    const [zone, email] = revoke ? context.args.slice(1) : context.args
+    if (zone === undefined || email === undefined) {
+      return printed(
+        context,
+        usage(
+          'beacon grant <зона> <почта> [--until ГГГГ-ММ-ДД] [--reason …] | grant revoke <зона> <почта>'
+        )
+      )
+    }
+    return withTarget(context, (target) =>
+      grant(context.root, target, context.io.configDir, {
+        zone,
+        email,
+        until: context.values.until,
+        reason: context.values.reason,
+        revoke,
+      })
+    )
+  },
+  grants: (context) =>
+    withTarget(context, (target) => grants(context.root, target, context.args[0])),
   signing: (context) => {
     if (context.args[0] !== 'setup') {
       return printed(context, usage('beacon signing setup [--key <файл .pub>]'))

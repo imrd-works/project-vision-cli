@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 
+import { agentGate } from '../commands/agent-gate.js'
 import { check } from '../commands/check.js'
 import { checkpointCommand, debtCommand } from '../commands/checkpoint.js'
 import { checkpoints } from '../commands/checkpoints.js'
@@ -10,7 +11,9 @@ import { init } from '../commands/init.js'
 import { list } from '../commands/list.js'
 import { mark } from '../commands/mark.js'
 import { mcpCommand } from '../commands/mcp.js'
+import { gate } from '../commands/ownership.js'
 import { type CommandResult, EXIT } from '../commands/result.js'
+import { rights } from '../commands/rights.js'
 import { packageVersion } from '../commands/running.js'
 import { DEFAULT_ORIGINS, DEFAULT_PORT, serveCommand } from '../commands/serve.js'
 import { status } from '../commands/status.js'
@@ -24,65 +27,10 @@ import { HOOK_NAMES, type HookName } from '../workspace/hooks.js'
 
 import { auditCommand } from './audit-command.js'
 import { type Context, type Io, print, runContext, usage } from './context.js'
+import { HELP } from './help.js'
 import { TEAM_COMMANDS, teamView } from './team.js'
 
 export type { Io } from './context.js'
-
-const HELP = `beacon — зоны и маяки Project Vision
-
-Использование: beacon <команда> [опции]
-
-Команды:
-  init                          создать .beacons/zones.yml и подключить git-хуки
-  check [--with <репозиторий>]  проверить карту зон и разметку (--with можно повторять)
-  list [--tag <тег>] [--zone <id>]
-                                зоны с файлами и диапазонами строк
-  which <файл>                  зоны файла и регионов в нём
-  status                        покрытие кода зонами, состояния зон, папки без зон
-  mark <файл> <зона>            поставить маяк зоны на файл
-  audit [--tag <тег>] [--zone <id>] [--checkpoint <чп>] [--tests] [--no-code]
-                                пакет контекста для аудита нейросетью (Markdown)
-  tree [--depth <n>]            дерево архитектуры: папки, число файлов, зоны
-  history                       коммиты по зонам, их авторы и провалы в разработке
-  validate                      проверить архитектуру инструментами проекта (.beacons/config.yml)
-  checkpoints [--with <репо>] [--team]
-                                линии чекпоинтов: пункты, стоперы, техдолг, застой;
-                                --team — все линии проекта по данным сервера команды
-  audit start <чп>              открыть раунд кросс-аудита на сервере команды
-  audit report <чп> [--model m] мой отчёт раунда: .beacons/audits/<чп>/round-<n>/<я>.md
-  audit merge <чп>              все находки раунда и сводка для решений (summary.md)
-  audit status <чп>             раунды, отчёты, сводки
-  sign <чп> agree|accept-risk|object [--comment …]
-                                подпись под текущим раундом кросс-аудита
-  checkpoint tick <чп> <пункт>  отметить ручной пункт
-  checkpoint close <чп> [--conditional --reason … --deadline ГГГГ-ММ-ДД --owner email
-                    --waits-for линия:чп --zones a,b --debt-id id]
-                                закрыть чекпоинт; условно — с техдолгом
-  debt close <чп> <долг>        закрыть техдолг
-  todo [--owner email] [--team] мои техдолги (приоритетные первыми) и незакрытые пункты
-  login [<сервер>] [--no-browser]
-                                войти на сервер команды через дашборд
-  logout [<сервер>]             забыть токен сервера
-  sync [--server <url> --project <id>]
-                                отправить изменения, сделанные офлайн, и забрать состояние проекта
-  note <линия:чекпоинт> <текст> | --delete
-                                заметка к чекпоинту для всей команды
-  whoami                        кто я в проекте: аккаунт, автор коммитов, подпись, мои зоны
-  owners [<зона>]               владельцы зон и доверенные лица (по данным сервера)
-  signing setup [--key <файл>]  подписывать коммиты SSH-ключом своего git-аккаунта
-  watch                         держать индекс актуальным при изменении файлов
-  serve [--port 4317] [--host 127.0.0.1] [--origin <url>]
-                                локальный API для дашборда с живыми обновлениями
-  mcp                           MCP-сервер для ИИ-агентов (stdio)
-  hook <имя> [аргументы git]    точка входа git-хуков (их подключает beacon init)
-
-Опции:
-  -C <папка>     работать с репозиторием в этой папке
-  --json         вывод в JSON — для плагинов и скриптов
-  -h, --help     справка
-  -v, --version  версия
-
-Спецификация формата: docs/beacon-format.md`
 
 const OPTIONS = {
   json: { type: 'boolean' },
@@ -114,6 +62,14 @@ const OPTIONS = {
   browser: { type: 'boolean', default: true },
   delete: { type: 'boolean' },
   key: { type: 'string' },
+  agent: { type: 'boolean' },
+  'agent-hooks': { type: 'boolean' },
+  until: { type: 'string' },
+  rule: { type: 'string' },
+  paths: { type: 'string' },
+  raw: { type: 'string' },
+  id: { type: 'string' },
+  reject: { type: 'boolean' },
 } as const
 
 const PARSE_CONFIG = {
@@ -175,7 +131,8 @@ function longRunning(
   command: string,
   args: readonly string[]
 ): ((context: Context) => Promise<number>) | undefined {
-  const name = command === 'audit' && args[0] === 'start' ? 'audit start' : command
+  const sub = `${command} ${args[0] ?? ''}`
+  const name = sub === 'audit start' ? sub : command
   return Object.hasOwn(LONG_RUNNING, name) ? LONG_RUNNING[name] : undefined
 }
 
@@ -195,7 +152,8 @@ function contextFor(
 const LONG_RUNNING: Record<string, (context: Context) => Promise<number>> = {
   ...TEAM_COMMANDS,
   watch: (context) => watchCommand(context.root, runContext(context)),
-  mcp: (context) => mcpCommand(context.root, runContext(context)),
+  mcp: (context) =>
+    mcpCommand(context.root, runContext(context), { configDir: context.io.configDir }),
   validate: async ({ root, io, values }) => {
     const outcome = await validate(root)
     print(outcome, io, values.json === true)
@@ -229,7 +187,18 @@ function fromCwd({ root, io }: Context, file: string): string {
 }
 
 const COMMANDS: Record<string, Handler> = {
-  init: (_, { root }) => init(root),
+  init: (_, { root, values }) => init(root, { agentHooks: values['agent-hooks'] === true }),
+  gate: (files, context) => {
+    const { root, io, values } = context
+    if (values.agent === true) return agentGate(root, io.readStdin(), io.configDir)
+    if (files.length === 0) return usage('beacon gate <файлы…>')
+    return gate(
+      root,
+      files.map((file) => fromCwd(context, file)),
+      io.configDir
+    )
+  },
+  rights: (_, { root, io }) => rights(root, io.configDir),
   check: (_, { root, io, values }) =>
     check(root, { with: (values.with ?? []).map((dir) => path.resolve(io.cwd, dir)) }),
   list: (_, { root, values: { tag, zone } }) =>

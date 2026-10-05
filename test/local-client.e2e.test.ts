@@ -199,6 +199,7 @@ describe('local client', () => {
         'audit_checkpoint',
         'audit_context',
         'checkpoints',
+        'gate_check',
         'list_zones',
         'todo',
         'validate_architecture',
@@ -221,6 +222,10 @@ describe('local client', () => {
       expect((await text('architecture_tree', { depth: 2 })).text).toContain('widgets/ (1)')
       expect((await text('validate_architecture')).text).toContain('"configured": false')
       expect((await text('which_zone', { file: 'missing.ts' })).isError).toBe(true)
+      // Without a team server there are no owners: the gate lets everything through.
+      expect((await text('gate_check', { files: ['src/app.ts'] })).text).toContain(
+        '"unchecked": true'
+      )
 
       repo.git('rm', '-q', '.beacons/zones.yml')
       expect((await text('audit_context', {})).isError).toBe(true)

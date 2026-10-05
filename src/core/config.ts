@@ -33,11 +33,18 @@ export interface BeaconConfig {
   }
   /** Working days without commits in one's zones before a developer counts as stuck. */
   stagnation: { days: number }
-  /** The team server and the project this repository is a line of (`beacon sync`). */
-  server?: { url: string; project: string }
+  /**
+   * The team server and the project this repository is a line of (`beacon sync`); `repository`
+   * is its name in the project when the origin remote does not tell it.
+   */
+  server?: { url: string; project: string; repository?: string | undefined }
   /** How the hooks check who makes a commit, against the people of the last `beacon sync`. */
   identity: IdentityPolicy
+  /** Changes of a zone's logic by someone who is not its owner, proxy or grantee. */
+  ownership: { enforce: (typeof OWNERSHIP_MODES)[number] }
 }
+
+export const OWNERSHIP_MODES = ['block', 'warn', 'off'] as const
 
 export const IDENTITY_CHECKS = ['signature', 'email', 'off'] as const
 
@@ -69,6 +76,7 @@ export const DEFAULT_CONFIG: BeaconConfig = {
   techDebt: { limitPerDeveloper: 2, extendDays: 7 },
   stagnation: { days: 3 },
   identity: { check: 'email', staleDays: 7, whenStale: 'allow' },
+  ownership: { enforce: 'block' },
 }
 
 const configSchema = z.strictObject({
@@ -102,10 +110,17 @@ const configSchema = z.strictObject({
       whenStale: z.enum(['hold', 'allow']).default('allow'),
     })
     .default({ check: 'email', staleDays: 7, whenStale: 'allow' }),
+  ownership: z
+    .strictObject({ enforce: z.enum(OWNERSHIP_MODES).default('block') })
+    .default({ enforce: 'block' }),
   server: z
     .strictObject({
       url: z.url({ protocol: /^https?$/ }).transform((url) => url.replace(/\/+$/, '')),
       project: z.uuid(),
+      repository: z
+        .string()
+        .regex(/^[\w.-]+$/)
+        .optional(),
     })
     .optional(),
 })
@@ -135,6 +150,7 @@ export function parseConfig(text: string | undefined): ConfigResult {
       techDebt: parsed.data.techDebt,
       stagnation: parsed.data.stagnation,
       identity: parsed.data.identity,
+      ownership: parsed.data.ownership,
       ...(parsed.data.server === undefined ? {} : { server: parsed.data.server }),
       validation: parsed.data.validation.map((entry) => ({
         name: entry.name ?? entry.tool,

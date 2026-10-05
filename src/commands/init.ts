@@ -4,14 +4,15 @@ import path from 'node:path'
 import { CONFIG_PATH, draftConfig } from '../core/config.js'
 import { draftZones, renderDraft } from '../core/init-draft.js'
 import { MANIFEST_PATH } from '../core/manifest.js'
+import { installAgentHooks } from '../workspace/agent-hooks.js'
 import { ensureAgentsGuide } from '../workspace/agents-guide.js'
 import { listFiles } from '../workspace/git.js'
-import { installHooks } from '../workspace/hooks.js'
+import { type HookInstall, installHooks } from '../workspace/hooks.js'
 
 import { type CommandResult, EXIT, result } from './result.js'
 
 /** Creates `.beacons/` with a draft zone map and connects the git hooks. Safe to re-run. */
-export function init(root: string): CommandResult {
+export function init(root: string, options: { agentHooks?: boolean } = {}): CommandResult {
   const lines: string[] = []
   const manifestFile = path.join(root, MANIFEST_PATH)
   let draftedZones: string[] = []
@@ -34,26 +35,38 @@ export function init(root: string): CommandResult {
   if (config) lines.push(`✓ ${CONFIG_PATH}: проверка архитектуры — ${config.join(', ')}`)
 
   const hooks = installHooks(root)
-  const where = hooks.mode === 'husky' ? '.husky' : 'git hooks'
-  if (hooks.installed.length > 0) lines.push(`✓ Хуки (${where}): ${hooks.installed.join(', ')}`)
-  if (hooks.alreadyInstalled.length > 0) {
-    lines.push(`• Уже подключены: ${hooks.alreadyInstalled.join(', ')}`)
-  }
-  for (const manual of hooks.manual) {
-    lines.push(
-      `⚠ ${path.relative(root, manual.file)} — чужой хук, добавьте в него строку:`,
-      `    ${manual.line}`
-    )
-  }
+  lines.push(...describeHooks(root, hooks))
   const agents = ensureAgentsGuide(root)
   lines.push(
     agents === 'present'
       ? '• AGENTS.md: правила для ИИ-агентов уже есть'
-      : `✓ AGENTS.md: правила для ИИ-агентов ${agents === 'created' ? 'созданы' : 'добавлены'}`,
+      : `✓ AGENTS.md: правила для ИИ-агентов ${{ created: 'созданы', appended: 'добавлены', updated: 'обновлены' }[agents]}`,
     'Дальше: beacon status — покрытие и папки без зон; beacon check — проверка разметки'
   )
+  if (options.agentHooks === true) {
+    const installed = installAgentHooks(root)
+    lines.push(
+      installed === 'present'
+        ? '• .claude/settings.json: проверка чужих зон перед правкой уже подключена'
+        : '✓ .claude/settings.json: агент проверяет чужие зоны перед каждой правкой'
+    )
+  }
 
   return result(EXIT.ok, lines, { manifest: MANIFEST_PATH, draftedZones, hooks, agents })
+}
+
+function describeHooks(root: string, hooks: HookInstall): string[] {
+  const where = hooks.mode === 'husky' ? '.husky' : 'git hooks'
+  return [
+    ...(hooks.installed.length > 0 ? [`✓ Хуки (${where}): ${hooks.installed.join(', ')}`] : []),
+    ...(hooks.alreadyInstalled.length > 0
+      ? [`• Уже подключены: ${hooks.alreadyInstalled.join(', ')}`]
+      : []),
+    ...hooks.manual.flatMap((manual) => [
+      `⚠ ${path.relative(root, manual.file)} — чужой хук, добавьте в него строку:`,
+      `    ${manual.line}`,
+    ]),
+  ]
 }
 
 /** Writes `.beacons/config.yml` when the project already has architecture linters. */

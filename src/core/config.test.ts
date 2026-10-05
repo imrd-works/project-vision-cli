@@ -28,6 +28,7 @@ identity:
         techDebt: { limitPerDeveloper: 2, extendDays: 7 },
         stagnation: { days: 3 },
         identity: { check: 'signature', staleDays: 7, whenStale: 'allow' },
+        ownership: { enforce: 'block' },
         validation: [
           {
             name: 'eslint',
