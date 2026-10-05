@@ -23,6 +23,9 @@ export type { ProjectIndex } from '../core/project-index.js'
 export type { ArchException, Registry, Rule } from '../core/registry.js'
 export {
   auditView,
+  dependencyView,
+  fileLinks,
+  type FileLinks,
   historyView,
   indexView,
   type IndexView,
