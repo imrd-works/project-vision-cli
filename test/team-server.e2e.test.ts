@@ -181,6 +181,45 @@ describe('team server', () => {
     })
   })
 
+  describe('tracker cards', () => {
+    it('shows the cards of the trackers by checkpoint and in my todo', async () => {
+      const card = (key: string, link: string, closed = false) => ({
+        tracker: 'jira',
+        key,
+        title: `Card ${key}`,
+        url: `https://acme.atlassian.net/browse/${key}`,
+        status: closed ? 'Done' : 'In Progress',
+        closed,
+        updatedAt: '2026-10-05T10:00:00.000Z',
+        links: [
+          {
+            zone: 'auth.api',
+            link,
+            repository: 'backend',
+            owner: 'test@example.com',
+            checkpoints: ['backend:auth'],
+          },
+        ],
+        unresolved: [],
+      })
+      server.cards = [card('VIS-1', 'task'), card('VIS-2', 'stopper'), card('VIS-3', 'debt', true)]
+      configure()
+      await repo.runAsync(['login', '--no-browser'])
+      await repo.runAsync(['sync'])
+
+      const team = repo.run(['checkpoints', '--team']).out
+      expect(team).toContain('⛔ стопер VIS-2 «Card VIS-2» (jira)')
+      expect(team).toContain('☐ задача VIS-1 «Card VIS-1» (jira)')
+      expect(team.indexOf('VIS-2')).toBeLessThan(team.indexOf('VIS-1'))
+      expect(team).not.toContain('VIS-3')
+      const todo = repo.run(['todo', '--team']).out
+      expect(todo).toContain('Карточки трекеров по вашим зонам:')
+      expect(todo).toContain(
+        'VIS-1 «Card VIS-1» — In Progress · https://acme.atlassian.net/browse/VIS-1'
+      )
+    })
+  })
+
   describe('cross-audit with the team', () => {
     it('opens a round on the server and signs it', async () => {
       configure()

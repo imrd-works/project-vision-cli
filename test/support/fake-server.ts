@@ -22,6 +22,7 @@ export class FakeServer {
   people: unknown[] = []
   owners: unknown[] = []
   signers: unknown = { signers: [], allowedSigners: '' }
+  cards: unknown[] = []
   private readonly entities: Record<string, unknown>[] = []
   private server: Server | undefined
 
@@ -109,6 +110,7 @@ export class FakeServer {
         people: this.people,
         owners: this.owners,
         signers: this.signers,
+        cards: this.cards,
       },
     ]
   }

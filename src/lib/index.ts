@@ -16,6 +16,7 @@ export type {
   CheckpointAudit,
   Finding,
 } from '../core/audit.js'
+export { type CardBeacon, type CardLink, parseCardBeacons } from '../core/card-beacons.js'
 export type { CommitRecord, History } from '../core/history.js'
 export type { Problem } from '../core/problem.js'
 export type { ProjectIndex } from '../core/project-index.js'
