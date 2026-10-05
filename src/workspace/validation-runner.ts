@@ -6,12 +6,20 @@ import { onlyRules, parseReport, type Violation } from '../core/validation.js'
 export interface ZonedViolation extends Violation {
   /** Zones of the file with the violation: whose architecture is broken. */
   zones: string[]
+  /** The registry's exception that makes it a deliberate deviation, not a failure. */
+  exception?: string
 }
+
+/** The exception of the registry that covers a violation, if any. */
+export type CoveringException = (violation: ZonedViolation) => string | undefined
 
 export interface ValidationRun {
   name: string
   tool: Validator['tool']
-  /** passed: no errors (warnings allowed); failed: architecture errors; error: the tool itself failed. */
+  /**
+   * passed: no errors (warnings and deviations covered by exceptions allowed); failed:
+   * architecture errors; error: the tool itself failed.
+   */
   status: 'passed' | 'failed' | 'error'
   violations: ZonedViolation[]
   error?: string
@@ -27,7 +35,8 @@ const STDERR_TAIL = 600
 export async function runValidator(
   root: string,
   validator: Validator,
-  zonesOf: (file: string) => string[]
+  zonesOf: (file: string) => string[],
+  covering: CoveringException = () => undefined
 ): Promise<ValidationRun> {
   const started = Date.now()
   const { code, stdout, stderr } = await run(validator.command, root)
@@ -51,12 +60,19 @@ export async function runValidator(
       error: `«${validator.command}» завершилась с кодом ${String(code)} без отчёта${detail ? `: ${detail}` : ''}`,
     })
   }
-  const zoned = violations.map((violation) => ({
-    ...violation,
-    zones: violation.file === undefined ? [] : zonesOf(violation.file),
-  }))
+  const zoned = violations.map((violation): ZonedViolation => {
+    const entry = {
+      ...violation,
+      zones: violation.file === undefined ? [] : zonesOf(violation.file),
+    }
+    const exception = covering(entry)
+    return exception === undefined ? entry : { ...entry, exception }
+  })
+  const failing = zoned.some(
+    (violation) => violation.severity === 'error' && violation.exception === undefined
+  )
   return finish({
-    status: zoned.some((violation) => violation.severity === 'error') ? 'failed' : 'passed',
+    status: failing ? 'failed' : 'passed',
     violations: zoned,
   })
 }

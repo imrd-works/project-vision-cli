@@ -4,6 +4,7 @@ import path from 'node:path'
 import { type AuditOptions, renderAuditPack } from '../core/audit-pack.js'
 import { isBinary, projectName } from '../workspace/git.js'
 import { type Project, scanProject } from '../workspace/project.js'
+import { loadRegistry } from '../workspace/registry.js'
 
 import { type CommandResult, EXIT, requireProject, result } from './result.js'
 
@@ -24,6 +25,7 @@ export function auditMarkdown(project: Project, options: AuditOptions): string {
       read: (file) => readSource(project.root, file),
       // Local calendar date (sv-SE formats as YYYY-MM-DD), not UTC.
       date: new Date().toLocaleDateString('sv-SE'),
+      registry: loadRegistry(project.root, project.manifest),
     },
     options
   )

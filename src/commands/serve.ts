@@ -5,6 +5,8 @@ import { todoFor } from '../core/timeline.js'
 import { authorEmail, findRepoRoot, projectName } from '../workspace/git.js'
 import { LiveIndex, type Snapshot } from '../workspace/live-index.js'
 import { LiveValidation } from '../workspace/live-validation.js'
+import { loadProject } from '../workspace/project.js'
+import { loadRegistry } from '../workspace/registry.js'
 import { type LineSource, projectTimeline } from '../workspace/timeline-builder.js'
 
 import { auditMarkdown } from './audit.js'
@@ -25,6 +27,7 @@ import { which } from './which.js'
  *   GET /api/validation      architecture checks; SSE `validation` when a run finishes
  *   GET /api/timeline        checkpoint lines of this and `--with` repositories
  *   GET /api/todo?owner=…    one developer's debts and items (git user.email by default)
+ *   GET /api/registry        the architect's rules and the exceptions to them
  *
  * The API serves source code, so it answers only to local hosts (no DNS rebinding) and to the
  * allowed browser origins (no reading by arbitrary websites).
@@ -151,6 +154,7 @@ const ROUTES: Record<string, Route> = {
         '/api/validation',
         '/api/timeline',
         '/api/todo?owner=',
+        '/api/registry',
       ],
     })
   },
@@ -175,6 +179,14 @@ const ROUTES: Record<string, Route> = {
       return
     }
     sendJson(response, 200, todoFor(built.timeline, owner))
+  },
+  '/api/registry': (_url, response, { root }) => {
+    const load = loadProject(root)
+    sendJson(
+      response,
+      200,
+      loadRegistry(root, load.kind === 'ok' ? load.project.manifest : undefined)
+    )
   },
   '/api/events': (_url, response, context) => {
     openEventStream(response, context)

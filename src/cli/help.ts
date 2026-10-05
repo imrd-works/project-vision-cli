@@ -47,6 +47,12 @@ export const HELP = `beacon — зоны и маяки Project Vision
                                 разрешить человеку менять логику зоны (владелец)
   grants [<зона>]               гранты зон этого репозитория
   rights                        мои права на зоны этого репозитория (для плагинов: --json)
+  rules                         правила архитектора (.beacons/rules.yml)
+  exceptions [--zone <id>]      осознанные отклонения от правил и решения владельцев
+  exception add --rule <id> --zones a,b [--paths glob,…] [--checkpoint <чп>] --reason "…"
+                                записать исключение в .beacons/exceptions.yml
+  exception approve <id> [--reject] [--comment …]
+                                одобрить или отклонить исключение (владелец зоны или проекта)
   watch                         держать индекс актуальным при изменении файлов
   serve [--port 4317] [--host 127.0.0.1] [--origin <url>]
                                 локальный API для дашборда с живыми обновлениями

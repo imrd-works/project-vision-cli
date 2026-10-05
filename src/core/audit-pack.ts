@@ -1,4 +1,5 @@
 import type { IndexedZone, ProjectIndex } from './project-index.js'
+import { exceptionsOfZone, type Registry, rulesOfZone } from './registry.js'
 import { isAncestorOrSelf } from './zone-id.js'
 
 /**
@@ -27,6 +28,8 @@ export interface AuditSource {
   /** File content by repository-relative path; undefined when unreadable or binary. */
   read: (file: string) => string | undefined
   date: string
+  /** The architect's rules and the deliberate deviations: checked against and audited beside. */
+  registry?: Pick<Registry, 'rules' | 'exceptions'> | undefined
 }
 
 /** Lines of a whole file shown before it is cut. */
@@ -69,7 +72,7 @@ export function renderAuditPack(source: AuditSource, options: AuditOptions): str
   ]
   if (zones.length === 0) return [...lines, 'Подходящих зон нет.', ''].join('\n')
 
-  lines.push(...zoneTable(zones))
+  lines.push(...zoneTable(zones), ...registrySection(zones, source.registry))
   const shown = new Map<string, string>()
   for (const zone of zones) lines.push(...zoneSection(zone, source, options, shown))
   return lines.join('\n')
@@ -100,6 +103,43 @@ function zoneTable(zones: readonly IndexedZone[]): string[] {
     ...zones.map(
       (zone) =>
         `| \`${zone.id}\` | ${zone.title} | ${zone.tags.join(', ')} | ${String(zone.files.length)} | ${String(zone.regions.length)} |`
+    ),
+    '',
+  ]
+}
+
+/** The rules the selected zones must follow and the exceptions agreed for them. */
+function registrySection(
+  zones: readonly IndexedZone[],
+  registry: AuditSource['registry']
+): string[] {
+  if (!registry) return []
+  const rules = [
+    ...new Map(
+      zones.flatMap((zone) => rulesOfZone(registry.rules, zone.id)).map((rule) => [rule.id, rule])
+    ).values(),
+  ]
+  const exceptions = [
+    ...new Map(
+      zones
+        .flatMap((zone) => exceptionsOfZone(registry.exceptions, zone.id))
+        .map((exception) => [exception.id, exception])
+    ).values(),
+  ]
+  if (rules.length === 0 && exceptions.length === 0) return []
+  return [
+    '## Правила архитектора и исключения',
+    '',
+    'Проверьте код на соответствие правилам. Исключения — осознанные отклонения: не считайте их',
+    'находками, но отметьте, если отклонение вышло за описанные рамки.',
+    '',
+    ...rules.map(
+      (rule) => `- **${rule.id}** — ${rule.title}${rule.description ? `: ${rule.description}` : ''}`
+    ),
+    ...(exceptions.length > 0 ? ['', '### Исключения', ''] : []),
+    ...exceptions.map(
+      (exception) =>
+        `- **${exception.id}** (правило ${exception.rule}; ${[...exception.zones, ...exception.paths].join(', ')}): ${exception.reason} — ${exception.author}, ${exception.date}`
     ),
     '',
   ]

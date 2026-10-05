@@ -10,6 +10,7 @@ import { checkpoints } from './checkpoints.js'
 import { findCheckpoint, zonesOf } from './cross-audit.js'
 import { list } from './list.js'
 import { gate } from './ownership.js'
+import { addException } from './registry.js'
 import { type CommandResult, EXIT, requireProject } from './result.js'
 import { packageVersion, type RunContext, untilAborted } from './running.js'
 import { status } from './status.js'
@@ -31,7 +32,8 @@ checkpoint's cross-audit, audit_checkpoint returns the code of all its zones.
 Before changing code, call gate_check with the files: the logic of someone else's zone may be
 changed only by its owner, a proxy or under a grant — if it is denied, do not write that change;
 suggest it to the owner instead (name and contacts are in the answer). Texts, comments and
-formatting are free.`
+formatting are free. A deliberate deviation from an architect's rule is recorded with
+record_exception.`
 
 const filter = {
   tag: z.string().optional().describe('Audit tag, e.g. "security"'),
@@ -164,7 +166,7 @@ export function createMcpServer(root: string, options: { configDir?: string } = 
   return server
 }
 
-/** The gate before an edit. */
+/** The gate before an edit and the registry of deliberate deviations. */
 function registerOwnershipTools(server: McpServer, root: string, configDir: string): void {
   server.registerTool(
     'gate_check',
@@ -185,6 +187,24 @@ function registerOwnershipTools(server: McpServer, root: string, configDir: stri
       // A refusal is an answer, not a failure of the tool.
       return { content: [{ type: 'text', text: JSON.stringify(outcome.json, null, 2) }] }
     }
+  )
+  server.registerTool(
+    'record_exception',
+    {
+      title: 'Record an exception to a rule',
+      description:
+        'Writes a deliberate deviation from a rule of .beacons/rules.yml into .beacons/exceptions.yml. Rewrite the developer\'s explanation into a short clear "reason" (no filler words, what deviates and why) and pass their own words as "raw"',
+      inputSchema: {
+        rule: z.string().describe('Rule ID from .beacons/rules.yml'),
+        zones: z.array(z.string()).default([]).describe('Zones the deviation is in'),
+        paths: z.array(z.string()).default([]).describe('Files it covers (globs), if narrower'),
+        reason: z.string().min(1).describe('The clean explanation'),
+        raw: z.string().optional().describe("The developer's own words"),
+        checkpoint: z.string().optional().describe('The checkpoint it is agreed for'),
+      },
+    },
+    ({ rule, zones, paths, reason, raw, checkpoint }) =>
+      json(addException(root, { id: undefined, rule, zones, paths, reason, raw, checkpoint }))
   )
 }
 

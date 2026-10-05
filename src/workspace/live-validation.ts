@@ -1,8 +1,10 @@
 import type { Problem } from '../core/problem.js'
 import type { ProjectIndex } from '../core/project-index.js'
+import { coveringException } from '../core/registry.js'
 
 import { loadConfig, loadProject, scanProject } from './project.js'
-import { runValidator, type ValidationRun } from './validation-runner.js'
+import { loadRegistry } from './registry.js'
+import { type CoveringException, runValidator, type ValidationRun } from './validation-runner.js'
 
 /** The architecture checks as of the last run. `version` grows with every finished run. */
 export interface ValidationSnapshot {
@@ -28,9 +30,24 @@ export async function validateProject(
   if (validators.length === 0) return { configured: false, runs: [], problems: [] }
 
   const zonesOf = zoneLookup(root, index)
+  const covering = exceptionLookup(root)
   const runs: ValidationRun[] = []
-  for (const validator of validators) runs.push(await runValidator(root, validator, zonesOf))
+  for (const validator of validators) {
+    runs.push(await runValidator(root, validator, zonesOf, covering))
+  }
   return { configured: true, runs, problems: [] }
+}
+
+/** Violations of rules the registry names, in the scope of an exception, are deviations. */
+function exceptionLookup(root: string): CoveringException {
+  const load = loadProject(root)
+  const registry = loadRegistry(root, load.kind === 'ok' ? load.project.manifest : undefined)
+  return (violation) =>
+    coveringException(registry, {
+      validatorRule: violation.rule,
+      ...(violation.file === undefined ? {} : { file: violation.file }),
+      zones: violation.zones,
+    })?.id
 }
 
 /**
