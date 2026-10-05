@@ -10,6 +10,7 @@ import { EXCEPTIONS_PATH, RULES_PATH } from '../core/registry.js'
 import type { RepositorySnapshot } from '../core/snapshot.js'
 
 import { commitLog, listFiles, projectName } from './git.js'
+import { collectImports } from './imports.js'
 import { loadProject, scanProject } from './project.js'
 
 /**
@@ -37,6 +38,7 @@ export function collectSnapshot(root: string): RepositorySnapshot {
     ...(load.kind === 'ok' ? { index: scanProject(load.project) } : {}),
     commits: parseCommitLog(commitLog(root)),
     audits: auditFiles(root),
+    imports: collectImports(root),
   }
 }
 

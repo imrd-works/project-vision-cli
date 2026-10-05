@@ -2,11 +2,13 @@ import { type CheckpointAudit, collectAudits } from './audit.js'
 import { type LineReport, reportLine, type ZoneFacts } from './checkpoint-report.js'
 import { type CheckpointPlan, parseCheckpoints } from './checkpoints.js'
 import { type BeaconConfig, DEFAULT_CONFIG, parseConfig } from './config.js'
+import { zoneDependencies } from './dependencies.js'
 import { authorActivity, buildHistory, type CommitRecord, type History } from './history.js'
 import { type Manifest, parseManifest } from './manifest.js'
 import { error, type Problem } from './problem.js'
 import type { ProjectIndex } from './project-index.js'
 import { parseRegistry, type Registry } from './registry.js'
+import { byText } from './text.js'
 import { type Activity, buildTimeline, type Timeline } from './timeline.js'
 
 /**
@@ -33,6 +35,16 @@ export interface RepositorySnapshot {
   commits: CommitRecord[]
   /** Cross-audit reports and summaries (`.beacons/audits/**`). */
   audits?: { path: string; text: string }[]
+  /** Repository files each JavaScript/TypeScript file imports. */
+  imports?: Record<string, string[]>
+}
+
+/** How the files of a file are related: its zones, the files of those zones, its imports. */
+export interface FileLinks {
+  zones: string[]
+  sameZone: string[]
+  imports: string[]
+  importedBy: string[]
 }
 
 export type ManifestState =
@@ -137,6 +149,39 @@ export function combineLines(lines: readonly LineInput[], options: TimelineOptio
 }
 
 /** The cross-audits of a snapshot's line: reports and summaries by checkpoint (`line:id`). */
+/** Dependencies between the zones of a repository: imports from files of one to another. */
+export function dependencyView(
+  snapshot: RepositorySnapshot
+): { from: string; to: string; imports: number }[] {
+  const zones = fileZones(snapshot)
+  return zoneDependencies(snapshot.imports ?? {}, (file) => zones.get(file) ?? [])
+}
+
+/** A file's zones, the other files of those zones, and the files it imports or is imported by. */
+export function fileLinks(snapshot: RepositorySnapshot, file: string): FileLinks {
+  const zones = fileZones(snapshot).get(file) ?? []
+  const index = indexView(snapshot).index
+  const sameZone = new Set(
+    (index?.zones ?? [])
+      .filter((zone) => zones.includes(zone.id))
+      .flatMap((zone) => zone.files)
+      .filter((other) => other !== file)
+  )
+  const imports = snapshot.imports ?? {}
+  return {
+    zones,
+    sameZone: [...sameZone].toSorted(byText),
+    imports: imports[file] ?? [],
+    importedBy: Object.keys(imports)
+      .filter((other) => imports[other]?.includes(file) === true)
+      .toSorted(byText),
+  }
+}
+
+function fileZones(snapshot: RepositorySnapshot): Map<string, string[]> {
+  return new Map((indexView(snapshot).index?.files ?? []).map((file) => [file.path, file.zones]))
+}
+
 /** The architect's rules and the deliberate deviations of a repository at a commit. */
 export function registryView(snapshot: RepositorySnapshot): Registry {
   const state = manifestState(snapshot)

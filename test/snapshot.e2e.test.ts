@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { collectSnapshot, historyView, indexView, timelineView } from '../src/lib/index.js'
+import {
+  collectSnapshot,
+  dependencyView,
+  fileLinks,
+  historyView,
+  indexView,
+  timelineView,
+} from '../src/lib/index.js'
 
 import { TestRepo, ZONES } from './support/test-repo.js'
 
@@ -52,6 +59,32 @@ describe('collectSnapshot', () => {
     const result = timelineView([snapshot], '2026-10-01')
     expect(result).toMatchObject({
       timeline: { lines: [{ line: 'web', checkpoints: [{ id: 'pricing', state: 'ready' }] }] },
+    })
+  })
+
+  it('knows which zones depend on which through their imports', () => {
+    repo
+      .write('tsconfig.json', '{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }')
+      .write('src/pages/home/Home.tsx', "import { Toggle } from '@/widgets/pricing/Toggle'\n")
+      .write('src/pages/home/Hero.tsx', "export { Home } from './Home'\n")
+    repo.commitAll('feat(home): page')
+    const snapshot = collectSnapshot(repo.root)
+    expect(snapshot.imports).toEqual({
+      'src/pages/home/Hero.tsx': ['src/pages/home/Home.tsx'],
+      'src/pages/home/Home.tsx': ['src/widgets/pricing/Toggle.tsx'],
+    })
+    expect(dependencyView(snapshot)).toEqual([{ from: 'home', to: 'home.pricing', imports: 1 }])
+    expect(fileLinks(snapshot, 'src/pages/home/Home.tsx')).toEqual({
+      zones: ['home'],
+      sameZone: ['src/pages/home/Hero.tsx'],
+      imports: ['src/widgets/pricing/Toggle.tsx'],
+      importedBy: ['src/pages/home/Hero.tsx'],
+    })
+    expect(fileLinks(snapshot, 'README.md')).toEqual({
+      zones: [],
+      sameZone: [],
+      imports: [],
+      importedBy: [],
     })
   })
 
