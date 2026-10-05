@@ -24,6 +24,9 @@ export class FakeServer {
   signers: unknown = { signers: [], allowedSigners: '' }
   cards: unknown[] = []
   qa: unknown = undefined
+  plan: unknown = undefined
+  /** What GET /meta says; undefined — an older server without it. */
+  minClientVersion: string | undefined = undefined
   role = 'owner'
   /** Who the next `beacon login` signs in as. */
   user = { email: 'ann@x.io', name: 'Ann' }
@@ -59,6 +62,10 @@ export class FakeServer {
     const open: Record<string, () => [number, unknown]> = {
       'POST /cli-auth/logins': () => this.startLogin(),
       'POST /cli-auth/logins/login-1/claim': () => this.claim(body),
+      'GET /meta': () =>
+        this.minClientVersion === undefined
+          ? [404, { message: 'Cannot GET /api/v1/meta' }]
+          : [200, { version: '2.0.0', apiVersion: 1, minClientVersion: this.minClientVersion }],
     }
     const authorized: Record<string, () => [number, unknown]> = {
       [`GET /projects/${PROJECT}/sync`]: () => this.pull(url.searchParams),
@@ -116,6 +123,7 @@ export class FakeServer {
         signers: this.signers,
         cards: this.cards,
         ...(this.qa === undefined ? {} : { qa: this.qa }),
+        ...(this.plan === undefined ? {} : { plan: this.plan }),
       },
     ]
   }

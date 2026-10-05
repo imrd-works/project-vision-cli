@@ -1,4 +1,5 @@
 import { keyHolder, personOf, type SigningSetup, type TeamPeople } from '../core/identity.js'
+import { describePlan } from '../core/plan.js'
 import type { Person, ZoneOwner } from '../core/sync.js'
 import { type Credential, loadCredential } from '../workspace/credentials.js'
 import { authorEmail } from '../workspace/git.js'
@@ -35,6 +36,7 @@ export function whoami(root: string, target: Target, configDir: string): Command
     ...accountLines(me),
     signingLine(signing, team, me),
     zonesLine(mine, me),
+    ...(cache.bundle.plan ? [`• ${describePlan(cache.bundle.plan)}`] : []),
     ...contactLines(me),
     `• Проверка автора в хуках: ${identityCheck(root)}`,
   ]

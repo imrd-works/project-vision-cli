@@ -9,7 +9,7 @@ import { readCache } from '../workspace/sync-cache.js'
 
 import { ownershipOf } from './grants.js'
 import { type CommandResult, EXIT, formatProblem, result } from './result.js'
-import { enqueue, sync, syncTarget, type Target } from './sync.js'
+import { enqueue, planRefusal, sync, syncTarget, type Target } from './sync.js'
 
 /**
  * The architect's registry from the command line: the rules, the deliberate deviations from
@@ -156,6 +156,8 @@ export async function decideException(
       error: 'unknown-exception',
     })
   }
+  const refused = planRefusal(root, target, 'exception-registry')
+  if (refused) return refused
   const loaded = ownershipOf(root, target)
   if ('failure' in loaded) return loaded.failure
   const key = `${loaded.ownership.repository}:${input.id}`

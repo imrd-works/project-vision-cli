@@ -8,7 +8,7 @@ import { readCache, writeCache } from '../workspace/sync-cache.js'
 import { findCheckpoint } from './cross-audit.js'
 import { serverFailure } from './login.js'
 import { type CommandResult, EXIT, result } from './result.js'
-import { sync, type Target } from './sync.js'
+import { planRefusal, sync, type Target } from './sync.js'
 
 /**
  * The team's side of a cross-audit: opening rounds on the server and signing them. A signature
@@ -29,6 +29,8 @@ export async function startAudit(
 ): Promise<CommandResult> {
   const found = findCheckpoint(root, checkpoint)
   if ('failure' in found) return found.failure
+  const refused = planRefusal(root, target, 'cross-audit')
+  if (refused) return refused
   const credential = loadCredential(configDir, target.server)
   if (!credential) return notLoggedIn(target)
   const ref = `${found.line}:${found.checkpoint.id}`
@@ -58,7 +60,7 @@ export async function sign(
   configDir: string,
   input: { checkpoint: string; verdict: string; comment: string | undefined }
 ): Promise<CommandResult> {
-  const invalid = checkSignature(input)
+  const invalid = checkSignature(input) ?? planRefusal(root, target, 'cross-audit')
   if (invalid) return invalid
   const found = findCheckpoint(root, input.checkpoint)
   if ('failure' in found) return found.failure
