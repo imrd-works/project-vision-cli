@@ -41,7 +41,10 @@ export async function login(options: LoginOptions): Promise<CommandResult> {
         })
         return result(
           EXIT.ok,
-          [`✓ Вы вошли на ${options.server} как ${claim.user.name} <${claim.user.email}>`],
+          [
+            `✓ Вы вошли на ${options.server} как ${claim.user.name} <${claim.user.email}>`,
+            'Дальше: beacon sync — данные проекта (владельцы зон, заметки) для работы и офлайн',
+          ],
           { server: options.server, user: claim.user }
         )
       }
