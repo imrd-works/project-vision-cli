@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
 import { describePlan, type Feature, isOlder, missingFeature } from '../core/plan.js'
+import type { Problem } from '../core/problem.js'
 import { type ChangedBundle, CHECKPOINT_REF, type PushResult, versionOf } from '../core/sync.js'
 import { loadCredential } from '../workspace/credentials.js'
 import { writeAllowedSigners } from '../workspace/identity.js'
@@ -11,7 +12,7 @@ import { ServerClient, ServerError } from '../workspace/server-client.js'
 import { ownCache, readCache, type SyncCache, writeCache } from '../workspace/sync-cache.js'
 
 import { serverFailure } from './login.js'
-import { type CommandResult, EXIT, result } from './result.js'
+import { type CommandResult, EXIT, formatProblem, result } from './result.js'
 import { packageVersion } from './running.js'
 
 export interface Target {
@@ -20,30 +21,49 @@ export interface Target {
 }
 
 /** The server and project: from flags, else from `.beacons/config.yml`. */
-export function syncTarget(
-  root: string,
-  flags: { server?: string | undefined; project?: string | undefined }
-): Target | CommandResult {
+export function syncTarget(root: string, flags: Flags): Target | CommandResult {
   const config = loadConfig(root)
-  const server = (flags.server ?? (config.ok ? config.config.server?.url : undefined))?.replace(
-    /\/+$/,
-    ''
+  const overridden = flags.server !== undefined && flags.project !== undefined
+  if (!config.ok && !overridden) return invalidConfig(config.problems)
+  return targetOf(flags, config.ok ? config.config.server : undefined) ?? noServer()
+}
+
+interface Flags {
+  server?: string | undefined
+  project?: string | undefined
+}
+
+function targetOf(flags: Flags, configured?: { url: string; project: string }): Target | undefined {
+  const server = flags.server ?? configured?.url
+  const project = flags.project ?? configured?.project
+  if (server === undefined || project === undefined) return undefined
+  return { server: server.replace(/\/+$/, ''), project }
+}
+
+function noServer(): CommandResult {
+  return result(
+    EXIT.usage,
+    [
+      '✖ Не знаю, с каким сервером синхронизироваться. Укажите в .beacons/config.yml:',
+      '  server:',
+      '    url: https://vision.example.com',
+      '    project: <id проекта из дашборда>',
+      '  или --server и --project',
+    ],
+    { error: 'no-server' }
   )
-  const project = flags.project ?? (config.ok ? config.config.server?.project : undefined)
-  if (server === undefined || project === undefined) {
-    return result(
-      EXIT.usage,
-      [
-        '✖ Не знаю, с каким сервером синхронизироваться. Укажите в .beacons/config.yml:',
-        '  server:',
-        '    url: https://vision.example.com',
-        '    project: <id проекта из дашборда>',
-        '  или --server и --project',
-      ],
-      { error: 'no-server' }
-    )
-  }
-  return { server, project }
+}
+
+/** A broken config is named as such: "no server" would send people looking in the wrong place. */
+function invalidConfig(problems: readonly Problem[]): CommandResult {
+  return result(
+    EXIT.usage,
+    [
+      '✖ .beacons/config.yml некорректен — сервер из него не прочитать:',
+      ...problems.map((problem) => `  ${formatProblem(problem)}`),
+    ],
+    { error: 'invalid-config', problems }
+  )
 }
 
 /** `beacon sync`: send changes made offline, then take the project's state for offline work. */
