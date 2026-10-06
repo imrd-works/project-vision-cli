@@ -80,7 +80,8 @@ export const DEFAULT_CONFIG: BeaconConfig = {
 }
 
 const configSchema = z.strictObject({
-  version: z.literal(1),
+  // The only version so far: a file that leaves it out (the dashboard's server block) is one too.
+  version: z.literal(1).default(1),
   validation: z
     .array(
       z.strictObject({
