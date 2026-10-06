@@ -54,6 +54,15 @@ identity:
     })
   })
 
+  it('takes a file without a version for the first one (the dashboard gives only the server)', () => {
+    expect(
+      parseConfig(
+        'server:\n  url: https://vision.example.com\n  project: 54cc4d32-7588-4252-a186-832699730b5a\n'
+      )
+    ).toMatchObject({ ok: true, config: { server: { url: 'https://vision.example.com' } } })
+    expect(parseConfig('version: 2\n')).toMatchObject({ ok: false })
+  })
+
   it('reads the team server and its project', () => {
     const result = parseConfig(
       'version: 1\nserver:\n  url: https://vision.example.com/\n  project: 54cc4d32-7588-4252-a186-832699730b5a\n'
