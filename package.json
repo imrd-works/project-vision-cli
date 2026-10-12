@@ -47,7 +47,7 @@
     "major": "npm version major -m \"chore(release): v%s\""
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "picomatch": "4.0.7",
     "yaml": "2.9.1",
     "zod": "4.6.5"
@@ -58,7 +58,7 @@
     "@commitlint/types": "21.2.3",
     "@eslint-community/eslint-plugin-eslint-comments": "4.8.1",
     "@eslint/js": "10.0.1",
-    "@secretlint/secretlint-rule-preset-recommend": "13.0.6",
+    "@secretlint/secretlint-rule-preset-recommend": "13.0.7",
     "@types/node": "22.20.5",
     "@types/picomatch": "4.0.3",
     "@vitest/coverage-v8": "5.0.3",
@@ -72,10 +72,10 @@
     "eslint-plugin-unicorn": "76.0.0",
     "globals": "17.13.0",
     "husky": "9.1.7",
-    "knip": "6.39.0",
+    "knip": "6.40.0",
     "lint-staged": "17.6.0",
     "prettier": "3.9.9",
-    "secretlint": "13.0.6",
+    "secretlint": "13.0.7",
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.0",
     "vitest": "5.0.3"
